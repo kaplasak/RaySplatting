@@ -17,8 +17,8 @@
 #define MAX_RAY_LENGTH 1 // DO P”èNIEJSZEGO USUNI CIA (NIEPOTRZEBNE W RENDERERZE OPTIXOWYM)
 //#define USE_DOUBLE_PRECISION // DO P”èNIEJSZEGO USUNI CIA (NIEPOTRZEBNE W RENDERERZE OPTIXOWYM)
 
-//#define RENDERER_OPTIX_USE_DOUBLE_PRECISION
-//#define GRADIENT_OPTIX_USE_DOUBLE_PRECISION
+#define RENDERER_OPTIX_USE_DOUBLE_PRECISION
+#define GRADIENT_OPTIX_USE_DOUBLE_PRECISION
 //#define OPTIMIZER_OPTIX_USE_DOUBLE_PRECISION // to be implemented
 
 #ifndef USE_DOUBLE_PRECISION
@@ -53,6 +53,8 @@
 	#define RINT_R(_X) rintf(_X)
 	#define SQRT_R(x) sqrtf(x)
 	#define TAN_R(_X) tanf(_X)
+	#define RCP_R(x) __frcp_rn(x)
+	#define COPYSIGN_R(x, y) copysignf(x, y)
 #else
 	typedef cufftDoubleReal REAL_R;
 	typedef double3 REAL3_R;
@@ -65,6 +67,8 @@
 	#define RINT_R(_X) rint(_X)
 	#define SQRT_R(x) sqrt(x)
 	#define TAN_R(_X) tan(_X)
+	#define RCP_R(x) __drcp_rn(x)
+	#define COPYSIGN_R(x, y) copysign(x, y)
 #endif
 
 #ifndef GRADIENT_OPTIX_USE_DOUBLE_PRECISION
@@ -373,16 +377,27 @@ struct SOptiXRenderConfig {
 	char *pretrained_model_path;
 	int start_epoch;
 	int end_epoch;
+
 	float lr_RGB;
 	float lr_RGB_exponential_decay_coefficient;
+	float lr_RGB_final;
+
 	float lr_alpha;
 	float lr_alpha_exponential_decay_coefficient;
+	float lr_alpha_final;
+
 	float lr_m;
 	float lr_m_exponential_decay_coefficient;
+	float lr_m_final;
+	
 	float lr_s;
 	float lr_s_exponential_decay_coefficient;
+	float lr_s_final;
+
 	float lr_q;
 	float lr_q_exponential_decay_coefficient;
+	float lr_q_final;
+
 	int densification_frequency;
 	int densification_start_epoch;
 	int densification_end_epoch;
@@ -397,6 +412,7 @@ struct SOptiXRenderConfig {
 	float lambda;
 	float ray_termination_T_threshold;
 	float last_significant_Gauss_alpha_gradient_precision;
+	float chi_square_squared_radius;
 	int max_Gaussians_per_ray;
 	int saving_frequency;
 	int evaluation_frequency;

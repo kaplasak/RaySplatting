@@ -30,6 +30,7 @@ struct LaunchParams {
 
 	float ray_termination_T_threshold;
 	float last_significant_Gauss_alpha_gradient_precision;
+	float chi_square_squared_radius;
 	int max_Gaussians_per_ray;
 };
 
@@ -153,7 +154,14 @@ extern "C" __global__ void __raygen__renderFrame() {
 			REAL_R v_dot_v = MAD_R(v_prim.x, v_prim.x, MAD_R(v_prim.y, v_prim.y, v_prim.z * v_prim.z));
 			REAL_R O_dot_O = MAD_R(O_prim.x, O_prim.x, MAD_R(O_prim.y, O_prim.y, O_prim.z * O_prim.z));
 			REAL_R v_dot_O = MAD_R(v_prim.x, O_prim.x, MAD_R(v_prim.y, O_prim.y, v_prim.z * O_prim.z));
-			REAL_R alpha = EXP_R(((REAL_R)0.5) * ((((v_dot_O * v_dot_O) / v_dot_v) - O_dot_O) / (s * s)));
+			// OLD
+			//REAL_R alpha = EXP_R(((REAL_R)0.5) * ((((v_dot_O * v_dot_O) / v_dot_v) - O_dot_O) / (s * s)));
+			// NEW (MORE NUMERICALLY STABLE)
+			REAL tmp_ = v_dot_O / v_dot_v;
+			REAL_G O_perp_x = MAD_G(-v_prim.x, tmp_, O_prim.x); // !!! !!! !!!
+			REAL_G O_perp_y = MAD_G(-v_prim.y, tmp_, O_prim.y); // !!! !!! !!!
+			REAL_G O_perp_z = MAD_G(-v_prim.z, tmp_, O_prim.z); // !!! !!! !!!
+			REAL_R alpha = EXP_R(-((REAL_R)0.5) * (MAD_R(O_perp_x, O_perp_x, MAD_R(O_perp_y, O_perp_y, O_perp_z * O_perp_z)) / (s * s)));
 			#ifndef RENDERER_OPTIX_USE_DOUBLE_PRECISION
 				alpha = __saturatef(alpha) / (((REAL_R)1.0) + EXP_R(-GC_1.w));
 			#else
@@ -281,12 +289,35 @@ extern "C" __global__ void __intersection__is() {
 	
 	// *********************************************************************************************
 
-	REAL_R a = MAD_R(vx_prim, vx_prim, MAD_R(vy_prim, vy_prim, vz_prim * vz_prim));
+	// OLD
+	/*REAL_R a = MAD_R(vx_prim, vx_prim, MAD_R(vy_prim, vy_prim, vz_prim * vz_prim));
 	REAL_R b = 2 * MAD_R(Ox_prim, vx_prim, MAD_R(Oy_prim, vy_prim, Oz_prim * vz_prim));
-	REAL_R c = MAD_R(Ox_prim, Ox_prim, MAD_R(Oy_prim, Oy_prim, MAD_R(Oz_prim, Oz_prim, -((REAL)11.3449) * s * s)));
+	REAL_R c = MAD_R(Ox_prim, Ox_prim, MAD_R(Oy_prim, Oy_prim, MAD_R(Oz_prim, Oz_prim, -((REAL)optixLaunchParams.chi_square_squared_radius) * s * s)));
 	REAL_R delta = MAD_R(b, b, -4 * a * c);
 	if (delta >= 0) {
 		REAL_R t1 = (-b - SQRT_R(delta)) / (2 * a);
+		optixReportIntersection(
+			((float)t1),
+			0
+		);
+	}*/
+
+	// NEW (MORE NUMERICALLY STABLE)
+	REAL_R v_dot_v = MAD_R(vx_prim, vx_prim, MAD_R(vy_prim, vy_prim, vz_prim * vz_prim));
+	REAL_R O_dot_v = MAD_R(Ox_prim, vx_prim, MAD_R(Oy_prim, vy_prim, Oz_prim * vz_prim));
+	REAL_R O_dot_O = MAD_R(Ox_prim, Ox_prim, MAD_R(Oy_prim, Oy_prim, Oz_prim * Oz_prim));
+
+	REAL_R tmp1 = 1 / v_dot_v;
+	REAL_R tmp2 = O_dot_v * tmp1;
+
+	REAL_R O_perp_x = MAD_R(-vx_prim, tmp2, Ox_prim);
+	REAL_R O_perp_y = MAD_R(-vy_prim, tmp2, Oy_prim);
+	REAL_R O_perp_z = MAD_R(-vz_prim, tmp2, Oz_prim);
+
+	REAL_R delta = -MAD_R(O_perp_x, O_perp_x, MAD_R(O_perp_y, O_perp_y, MAD_R(O_perp_z, O_perp_z, -((REAL)optixLaunchParams.chi_square_squared_radius) * s * s))); // !!! !!! !!!
+	if (delta >= 0) {
+		REAL_R t = -(O_dot_v + COPYSIGN_R(SQRT_R(v_dot_v * delta), O_dot_v)) * tmp1;
+		REAL_R t1 = ((O_dot_v <= 0) ? (O_dot_O - (((REAL)optixLaunchParams.chi_square_squared_radius) * s * s)) / (v_dot_v * t) : t);
 		optixReportIntersection(
 			((float)t1),
 			0

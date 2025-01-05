@@ -1,23 +1,28 @@
 training                      <Model learning phase (0)>
 models/lego                   <Blender data directory path (1)>
 models/lego/lego_iter_100.ply <Pretrained GS model path (2)>
-54000          <Start epoch (3)>
+87000          <Start epoch (3)>
 480000         <End epoch>
 0.005          <Learning rate for Gaussian RGB components>
 -0.000086643   <Exponential decay coefficient for learning rate for Gaussian RGB components>
+0.001          <Final value of learning rate for Gaussian RGB components>
 0.125          <Learning rate for Gaussian alpha component>
 -0.000086643   <Exponential decay coefficient for learning rate for Gaussian alpha component>
+0.01           <Final value of learning rate for Gaussian alpha component>
 0.0003         <Learning rate for Gaussian means (4)>
 -0.000086643   <Exponential decay coefficient for learning rate for Gaussian means>
-0.0005         <Learning rate for Gaussian scales (4)>
+0.000000306    <Final value of learning rate for Gaussian means (4)>
+0.001          <Learning rate for Gaussian scales (4)>
 0              <Exponential decay coefficient for learning rate for Gaussian scales>
+0.001          <Final value of learning rate for Gaussian scales (4)>
 0.001          <Learning rate for Gaussian quaternions>
 0              <Exponential decay coefficient for learning rate for Gaussian quaternions>
+0.001          <Final value of learning rate for Gaussian quaternions>
 100            <Densification frequency>
 1600           <Densification start epoch>
 16000          <Densification end epoch>
 -5.5373        <alpha threshold for Gauss removal>
-0.00025        <Minimum s coefficients clipping threshold (4)>
+0.00003        <Minimum s coefficients clipping threshold (4)>
 0.0153         <Maximum s coefficients clipping threshold (4)>
 0.0005         <Minimum s norm threshold for Gauss removal (4)>
 0.0153         <Maximum s norm threshold for Gauss removal (4)>
@@ -27,7 +32,8 @@ models/lego/lego_iter_100.ply <Pretrained GS model path (2)>
 0.25           <Lambda parameter for the cost function>
 0.0000000001   <Ray termination T threshold>
 0.0000000001   <Last significant Gauss alpha gradient precision>
-512            <Maximum number of Gaussians per ray>
+11.3449        <Chi-square squared radius for the Gaussian ellipsoid of confidence> !!!
+128            <Maximum number of Gaussians per ray>
 1000           <Model parameters saving frequency>
 1000           <Model evaluation frequency>
 0              <Model evaluation epoch (5)>
@@ -41,40 +47,11 @@ models/lego/lego_iter_100.ply <Pretrained GS model path (2)>
 (5) Evaluation is performed during every epoch congruent to <Model evaluation epoch> modulo <Model evaluation frequency>.
 (6) If after gradient update we obtain in total more Gaussians than this number, we break the training process, evaluate the model and save the parameters. Introduced to prevent the memory overrun. 
 
-mu gradient norm (lambda 0.05):
-0.0000750 13400 epoch -> 400K Gaussians
-0.0000775 16000 epoch -> 388703 Gaussians
-0.0000800 16000 epoch -> 339782 Gaussians (bardzo mało śmieci!)
+----------------------------------------------------------------------------------------------------
 
-mu gradient norm (lambda 0.1):
-0.0000775 13600 epoch -> 400K Gaussians
+https://github.com/KByrski/RaySplatting.git
 
-mu gradient norm (lambda 0.15):
-0.0000775 13000 epoch -> 400K Gaussians
+87000 - last epoch
+11.3449 - promień
+0.0000000001 - thresholdy (obydwa) dla promienia
 
-mu gradient norm (lambda 0.2):
-0.0000775 13000 epoch -> 400K Gaussians
-
-mu gradient norm (lambda 0.225):
-0.0000775 12800 epoch -> 400K Gaussians
-
-mu gradient norm (lambda 0.235):
-0.0000775 12700 epoch -> 400K Gaussians
-
-mu gradient norm (lambda 0.2475):
-0.0000775 12700 epoch -> 400K Gaussians
-
-mu gradient norm (lambda: 0.25):
-0.0000775 12600 epoch -> 400K Gaussians
-0.0000800 15800 epoch -> 400K Gaussians
-
-mu gradient norm (lambda 0.26):
-0.0000775 12800 epoch -> 400K Gaussians
-
-mu gradient norm (lambda 0.275):
-0.0000775 12800 epoch -> 400K Gaussians
-
-mu gradient norm (lambda 0.3):
-0.0000775 12800 epoch -> 400K Gaussians
-
-s_split 0.0045

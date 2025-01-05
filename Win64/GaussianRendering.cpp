@@ -330,6 +330,8 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%d", &config.end_epoch, 256);
 
+	// *********************************************************************************************
+
 	// (5) Learning rate for Gaussian RGB components
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_RGB, 256);
@@ -337,6 +339,12 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	// (6) Exponential decay coefficient for learning rate for Gaussian RGB components
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_RGB_exponential_decay_coefficient, 256);
+
+	// (??) Final value of learning rate for Gaussian RGB components
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_RGB_final, 256);
+
+	// *********************************************************************************************
 	   	  
 	// (7) Learning rate for Gaussian alpha component
 	fgets(buf, 256, f);
@@ -346,6 +354,12 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_alpha_exponential_decay_coefficient, 256);
 
+	// (??) Final value of learning rate for Gaussian alpha component
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_alpha_final, 256);
+
+	// *********************************************************************************************
+
 	// (9) Learning rate for Gaussian means
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_m, 256);
@@ -353,6 +367,12 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	// (10) Exponential decay coefficient for learning rate for Gaussian means
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_m_exponential_decay_coefficient, 256);
+
+	// (??) Final value of learning rate for Gaussian means
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_m_final, 256);
+
+	// *********************************************************************************************
 
 	// (11) Learning rate for Gaussian scales
 	fgets(buf, 256, f);
@@ -362,6 +382,12 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_s_exponential_decay_coefficient, 256);
 
+	// (??) Final value of learning rate for Gaussian scales
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_s_final, 256);
+
+	// *********************************************************************************************
+
 	// (13) Learning rate for Gaussian quaternions
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_q, 256);
@@ -369,6 +395,12 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	// (14) Exponential decay coefficient for learning rate for Gaussian quaternions
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_q_exponential_decay_coefficient, 256);
+
+	// (??) Final value of learning rate for Gaussian quaternions
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_q_final, 256);
+
+	// *********************************************************************************************
 
 	// (15) Densification frequency
 	fgets(buf, 256, f);
@@ -425,6 +457,10 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	// (28) Last significant Gauss alpha gradient precision
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.last_significant_Gauss_alpha_gradient_precision, 256);
+
+	// (??) Chi-square squared radius for the Gaussian ellipsoid of confidence
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.chi_square_squared_radius, 256);
 
 	// (29) Maximum number of Gaussians per ray
 	fgets(buf, 256, f);
@@ -525,18 +561,11 @@ void PrepareScene() {
 			GC[i].mY = pfs.y;
 			GC[i].mZ = pfs.z;
 
+			// Potrzebne, bo w GS daj¹ œrednicê, a nie promieñ na poszczególnych osiach
 			double sX = 0.5f / (1.0 + exp(-pfs.scale_0));
 			double sY = 0.5f / (1.0 + exp(-pfs.scale_1));
 			double sZ = 0.5f / (1.0 + exp(-pfs.scale_2));
-			if (sX <= 0.001) sX = 0.001;
-			if (sY <= 0.001) sY = 0.001;
-			if (sZ <= 0.001) sZ = 0.001;
-			//sX = 0.002f; // !!! !!! !!!
-			//sY = 0.002f; // !!! !!! !!!
-			//sZ = 0.002f; // !!! !!! !!!
-			//GC[i].sX = sX; // !!! !!! !!!
-			//GC[i].sY = sY; // !!! !!! !!!
-			//GC[i].sZ = sZ; // !!! !!! !!!
+
 			GC[i].sX = -log((1.0 / sX) - 1.0);
 			GC[i].sY = -log((1.0 / sY) - 1.0);
 			GC[i].sZ = -log((1.0 / sZ) - 1.0);
@@ -1151,8 +1180,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 									// !!! !!! !!!
 									if (
 										(epochNum % config.evaluation_frequency == config.evaluation_epoch) ||
-										(epochNum == config.end_epoch) ||
-										(params_OptiX.numberOfGaussians > config.max_Gaussians_per_model)
+										(epochNum == config.end_epoch)
 									) {
 										double MSE = 0.0;
 										double PSNR = 0.0;
@@ -1225,8 +1253,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 									if (
 										(strcmp(config.learning_phase, "training") == 0) && (
 											(epochNum % config.evaluation_frequency == config.evaluation_epoch) ||
-											(epochNum == config.end_epoch) ||
-											(params_OptiX.numberOfGaussians > config.max_Gaussians_per_model)
+											(epochNum == config.end_epoch)
 										)
 									) {
 										double MSE = 0.0;
@@ -1339,14 +1366,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 									if (
 										(params_OptiX.epoch % config.saving_frequency == 0) ||
-										(params_OptiX.epoch == config.end_epoch) ||
-										(params_OptiX.numberOfGaussians > config.max_Gaussians_per_model)
+										(params_OptiX.epoch == config.end_epoch)
 									)
 										DumpParameters(params_OptiX);
-									if (
-										(params_OptiX.epoch == config.end_epoch) ||
-										(params_OptiX.numberOfGaussians > config.max_Gaussians_per_model)
-									)
+									if (params_OptiX.epoch == config.end_epoch)
 										PostQuitMessage(0); // !!! !!! !!!
 
 									if (params_OptiX.epoch % 10 == 0) cameraChanged = true;

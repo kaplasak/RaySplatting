@@ -26,18 +26,30 @@ float min_s_coefficients_clipping_threshold_host;
 float max_s_coefficients_clipping_threshold_host;
 float ray_termination_T_threshold_host;
 float last_significant_Gauss_alpha_gradient_precision_host;
+float chi_square_squared_radius_host; 
 int max_Gaussians_per_ray_host;
+int max_Gaussians_per_model_host;
 
 __constant__ float lr_RGB;
 __constant__ float lr_RGB_exponential_decay_coefficient;
+__constant__ float lr_RGB_final;
+
 __constant__ float lr_alpha;
 __constant__ float lr_alpha_exponential_decay_coefficient;
+__constant__ float lr_alpha_final;
+
 __constant__ float lr_m;
 __constant__ float lr_m_exponential_decay_coefficient;
+__constant__ float lr_m_final;
+
 __constant__ float lr_s;
 __constant__ float lr_s_exponential_decay_coefficient;
+__constant__ float lr_s_final;
+
 __constant__ float lr_q;
 __constant__ float lr_q_exponential_decay_coefficient;
+__constant__ float lr_q_final;
+
 __constant__ int densification_frequency;
 __constant__ int densification_start_epoch;
 __constant__ int densification_end_epoch;
@@ -51,7 +63,9 @@ __constant__ float s_norm_threshold_for_split_strategy;
 __constant__ float split_ratio;
 __constant__ float lambda;
 __constant__ float ray_termination_T_threshold;
+__constant__ float chi_square_squared_radius; 
 __constant__ int max_Gaussians_per_ray;
+__constant__ int max_Gaussians_per_model;
 
 // *************************************************************************************************
 
@@ -81,6 +95,7 @@ struct LaunchParams {
 
 	float ray_termination_T_threshold;
 	float last_significant_Gauss_alpha_gradient_precision;
+	float chi_square_squared_radius;
 	int max_Gaussians_per_ray;
 };
 
@@ -436,7 +451,8 @@ bool InitializeOptiXRenderer(
 		float sY = 1.0f / (1.0f + expf(-GC_part_3[i].x));
 		float sZ = 1.0f / (1.0f + expf(-GC_part_3[i].y));
 
-		sX = ((sX < min_s_coefficients_clipping_threshold_host) ? min_s_coefficients_clipping_threshold_host : sX);
+		// TO JEST LE, BO NIE UWZGLÊDNIAMY EXTENTU SCENY
+		/*sX = ((sX < min_s_coefficients_clipping_threshold_host) ? min_s_coefficients_clipping_threshold_host : sX);
 		sY = ((sY < min_s_coefficients_clipping_threshold_host) ? min_s_coefficients_clipping_threshold_host : sY);
 		sZ = ((sZ < min_s_coefficients_clipping_threshold_host) ? min_s_coefficients_clipping_threshold_host : sZ);
 
@@ -446,11 +462,11 @@ bool InitializeOptiXRenderer(
 
 		GC_part_2[i].w = -logf((1.0f / sX) - 1.0f);
 		GC_part_3[i].x = -logf((1.0f / sY) - 1.0f);
-		GC_part_3[i].y = -logf((1.0f / sZ) - 1.0f);
+		GC_part_3[i].y = -logf((1.0f / sZ) - 1.0f);*/
 
-		float tmpX = sqrtf(11.3449f * ((sX * sX * Q11 * Q11) + (sY * sY * Q12 * Q12) + (sZ * sZ * Q13 * Q13)));
-		float tmpY = sqrtf(11.3449f * ((sX * sX * Q21 * Q21) + (sY * sY * Q22 * Q22) + (sZ * sZ * Q23 * Q23)));
-		float tmpZ = sqrtf(11.3449f * ((sX * sX * Q31 * Q31) + (sY * sY * Q32 * Q32) + (sZ * sZ * Q33 * Q33)));
+		float tmpX = sqrtf(chi_square_squared_radius_host * ((sX * sX * Q11 * Q11) + (sY * sY * Q12 * Q12) + (sZ * sZ * Q13 * Q13)));
+		float tmpY = sqrtf(chi_square_squared_radius_host * ((sX * sX * Q21 * Q21) + (sY * sY * Q22 * Q22) + (sZ * sZ * Q23 * Q23)));
+		float tmpZ = sqrtf(chi_square_squared_radius_host * ((sX * sX * Q31 * Q31) + (sY * sY * Q32 * Q32) + (sZ * sZ * Q33 * Q33)));
 
 		aabbs[(i * 6) + 0] = GC_part_2[i].x - tmpX; // !!! !!! !!!
 		aabbs[(i * 6) + 3] = GC_part_2[i].x + tmpX; // !!! !!! !!!
@@ -499,6 +515,25 @@ bool InitializeOptiXRenderer(
 	float dZ = SortableUint2Float(auxiliary_values_local.scene_upper_bound.z) - SortableUint2Float(auxiliary_values_local.scene_lower_bound.z);
 	
 	scene_extent_local = sqrtf((dX * dX) + (dY * dY) + (dZ * dZ));
+
+	// Dopiero teraz, gdy mamy policzony ekstent sceny mo¿emy przycinaæ parametry skali Gaussów.
+	for (int i = 0; i < params_OptiX.numberOfGaussians; ++i) {
+		float sX = 1.0f / (1.0f + expf(-GC_part_2[i].w));
+		float sY = 1.0f / (1.0f + expf(-GC_part_3[i].x));
+		float sZ = 1.0f / (1.0f + expf(-GC_part_3[i].y));
+
+		sX = ((sX < scene_extent_local * min_s_coefficients_clipping_threshold_host) ? scene_extent_local * min_s_coefficients_clipping_threshold_host : sX);
+		sY = ((sY < scene_extent_local * min_s_coefficients_clipping_threshold_host) ? scene_extent_local * min_s_coefficients_clipping_threshold_host : sY);
+		sZ = ((sZ < scene_extent_local * min_s_coefficients_clipping_threshold_host) ? scene_extent_local * min_s_coefficients_clipping_threshold_host : sZ);
+
+		sX = ((sX > scene_extent_local * max_s_coefficients_clipping_threshold_host) ? scene_extent_local * max_s_coefficients_clipping_threshold_host : sX);
+		sY = ((sY > scene_extent_local * max_s_coefficients_clipping_threshold_host) ? scene_extent_local * max_s_coefficients_clipping_threshold_host : sY);
+		sZ = ((sZ > scene_extent_local * max_s_coefficients_clipping_threshold_host) ? scene_extent_local * max_s_coefficients_clipping_threshold_host : sZ);
+
+		GC_part_2[i].w = -logf((1.0f / sX) - 1.0f);
+		GC_part_3[i].x = -logf((1.0f / sY) - 1.0f);
+		GC_part_3[i].y = -logf((1.0f / sZ) - 1.0f);
+	}
 
 	// *********************************************************************************************
 
@@ -1192,6 +1227,7 @@ bool RenderOptiX(SOptiXRenderParams& params_OptiX) {
 	launchParams.bitmap_out_B = params_OptiX.bitmap_out_B;
 	launchParams.ray_termination_T_threshold = ray_termination_T_threshold_host; // !!! !!! !!!
 	launchParams.last_significant_Gauss_alpha_gradient_precision = last_significant_Gauss_alpha_gradient_precision_host; // !!! !!! !!!
+	launchParams.chi_square_squared_radius = chi_square_squared_radius_host; // !!! !!! !!!
 	launchParams.max_Gaussians_per_ray = max_Gaussians_per_ray_host; // !!! !!! !!!
 
 	void *launchParamsBuffer;
@@ -1366,7 +1402,8 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 			REAL_G Oz_prim = MAD_G(R13, Ox, MAD_G(R23, Oy, R33 * Oz)) * sZInv;
 			REAL_G vz_prim = MAD_G(R13, v.x, MAD_G(R23, v.y, R33 * v.z)) * sZInv;
 
-			REAL_G v_dot_v = MAD_G(vx_prim, vx_prim, MAD_G(vy_prim, vy_prim, vz_prim * vz_prim));
+			// OLD
+			/*REAL_G v_dot_v = MAD_G(vx_prim, vx_prim, MAD_G(vy_prim, vy_prim, vz_prim * vz_prim));
 			REAL_G O_dot_O = MAD_G(Ox_prim, Ox_prim, MAD_G(Oy_prim, Oy_prim, Oz_prim * Oz_prim));
 			REAL_G v_dot_O = MAD_G(vx_prim, Ox_prim, MAD_G(vy_prim, Oy_prim, vz_prim * Oz_prim));
 			REAL_G tmp1 = v_dot_O / v_dot_v;
@@ -1376,6 +1413,26 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 				alpha_next = tmp2 * __saturatef(expf(0.5f * (MAD_G(v_dot_O, tmp1, -O_dot_O) / (s * s)))); // !!! !!! !!!
 			#else
 				alpha_next = exp(0.5 * (MAD_G(v_dot_O, tmp1, -O_dot_O) / (s * s)));
+				alpha_next = (alpha_next < 0) ? 0 : alpha_next;
+				alpha_next = (alpha_next > 1) ? 1 : alpha_next;
+				alpha_next = tmp2 * alpha_next; // !!! !!! !!!
+			#endif*/
+
+			// NEW (MORE NUMERICALLY STABLE)
+			REAL_G v_dot_v = MAD_G(vx_prim, vx_prim, MAD_G(vy_prim, vy_prim, vz_prim * vz_prim));
+			REAL_G O_dot_O = MAD_G(Ox_prim, Ox_prim, MAD_G(Oy_prim, Oy_prim, Oz_prim * Oz_prim));
+			REAL_G v_dot_O = MAD_G(vx_prim, Ox_prim, MAD_G(vy_prim, Oy_prim, vz_prim * Oz_prim));
+			REAL_G tmp1 = v_dot_O / v_dot_v;
+			REAL_G tmp2 = 1 / (1 + EXP_G(-GC_1.w));
+
+			REAL_G vecx_tmp = MAD_G(-vx_prim, tmp1, Ox_prim); // !!! !!! !!!
+			REAL_G vecy_tmp = MAD_G(-vy_prim, tmp1, Oy_prim); // !!! !!! !!!
+			REAL_G vecz_tmp = MAD_G(-vz_prim, tmp1, Oz_prim); // !!! !!! !!!
+
+			#ifndef GRADIENT_OPTIX_USE_DOUBLE_PRECISION
+				alpha_next = tmp2 * __saturatef(expf(-0.5f * (MAD_G(vecx_tmp, vecx_tmp, MAD_G(vecy_tmp, vecy_tmp, vecz_tmp * vecz_tmp)) / (s * s)))); // !!! !!! !!!
+			#else
+				alpha_next = exp(-0.5 * (MAD_G(vecx_tmp, vecx_tmp, MAD_G(vecy_tmp, vecy_tmp, vecz_tmp * vecz_tmp)) / (s * s)));
 				alpha_next = (alpha_next < 0) ? 0 : alpha_next;
 				alpha_next = (alpha_next > 1) ? 1 : alpha_next;
 				alpha_next = tmp2 * alpha_next; // !!! !!! !!!
@@ -1436,9 +1493,15 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 
 			// *************************************************************************************
 
-			REAL_G vecx_tmp = tmp3 * MAD_G(-vx_prim, tmp1, Ox_prim); // !!! !!! !!!
+			// OLD
+			/*REAL_G vecx_tmp = tmp3 * MAD_G(-vx_prim, tmp1, Ox_prim); // !!! !!! !!!
 			REAL_G vecy_tmp = tmp3 * MAD_G(-vy_prim, tmp1, Oy_prim); // !!! !!! !!!
-			REAL_G vecz_tmp = tmp3 * MAD_G(-vz_prim, tmp1, Oz_prim); // !!! !!! !!!
+			REAL_G vecz_tmp = tmp3 * MAD_G(-vz_prim, tmp1, Oz_prim); // !!! !!! !!!*/
+
+			// NEW (MORE NUMERICALLY STABLE)
+			vecx_tmp = tmp3 * vecx_tmp; // !!! !!! !!!
+			vecy_tmp = tmp3 * vecy_tmp; // !!! !!! !!!
+			vecz_tmp = tmp3 * vecz_tmp; // !!! !!! !!!
 
 			// *************************************************************************************
 
@@ -1663,7 +1726,8 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 				REAL_G Oz_prim = MAD_G(R13, Ox, MAD_G(R23, Oy, R33 * Oz)) * sZInv;
 				REAL_G vz_prim = MAD_G(R13, v.x, MAD_G(R23, v.y, R33 * v.z)) * sZInv;
 
-				REAL_G v_dot_v = MAD_G(vx_prim, vx_prim, MAD_G(vy_prim, vy_prim, vz_prim * vz_prim));
+				// OLD
+				/*REAL_G v_dot_v = MAD_G(vx_prim, vx_prim, MAD_G(vy_prim, vy_prim, vz_prim * vz_prim));
 				REAL_G O_dot_O = MAD_G(Ox_prim, Ox_prim, MAD_G(Oy_prim, Oy_prim, Oz_prim * Oz_prim));
 				REAL_G v_dot_O = MAD_G(vx_prim, Ox_prim, MAD_G(vy_prim, Oy_prim, vz_prim * Oz_prim));
 				REAL_G tmp1 = v_dot_O / v_dot_v;
@@ -1673,6 +1737,26 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 					alpha_next = tmp2 * __saturatef(expf(0.5f * (MAD_G(v_dot_O, tmp1, -O_dot_O) / (s * s)))); // !!! !!! !!!
 				#else
 					alpha_next = exp(0.5 * (MAD_G(v_dot_O, tmp1, -O_dot_O) / (s * s)));
+					alpha_next = (alpha_next < 0) ? 0 : alpha_next;
+					alpha_next = (alpha_next > 1) ? 1 : alpha_next;
+					alpha_next = tmp2 * alpha_next; // !!! !!! !!!
+				#endif*/
+
+				// NEW (MORE NUMERICALLY STABLE)
+				REAL_G v_dot_v = MAD_G(vx_prim, vx_prim, MAD_G(vy_prim, vy_prim, vz_prim * vz_prim));
+				REAL_G O_dot_O = MAD_G(Ox_prim, Ox_prim, MAD_G(Oy_prim, Oy_prim, Oz_prim * Oz_prim));
+				REAL_G v_dot_O = MAD_G(vx_prim, Ox_prim, MAD_G(vy_prim, Oy_prim, vz_prim * Oz_prim));
+				REAL_G tmp1 = v_dot_O / v_dot_v;
+				REAL_G tmp2 = 1 / (1 + EXP_G(-GC_1.w));
+
+				REAL_G vecx_tmp = MAD_G(-vx_prim, tmp1, Ox_prim); // !!! !!! !!!
+				REAL_G vecy_tmp = MAD_G(-vy_prim, tmp1, Oy_prim); // !!! !!! !!!
+				REAL_G vecz_tmp = MAD_G(-vz_prim, tmp1, Oz_prim); // !!! !!! !!!
+
+				#ifndef GRADIENT_OPTIX_USE_DOUBLE_PRECISION
+					alpha_next = tmp2 * __saturatef(expf(-0.5f * (MAD_G(vecx_tmp, vecx_tmp, MAD_G(vecy_tmp, vecy_tmp, vecz_tmp * vecz_tmp)) / (s * s)))); // !!! !!! !!!
+				#else
+					alpha_next = exp(-0.5 * (MAD_G(vecx_tmp, vecx_tmp, MAD_G(vecy_tmp, vecy_tmp, vecz_tmp * vecz_tmp)) / (s * s)));
 					alpha_next = (alpha_next < 0) ? 0 : alpha_next;
 					alpha_next = (alpha_next > 1) ? 1 : alpha_next;
 					alpha_next = tmp2 * alpha_next; // !!! !!! !!!
@@ -1737,7 +1821,8 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 			REAL_G Oz_prim = MAD_G(R13, Ox, MAD_G(R23, Oy, R33 * Oz)) * sZInv;
 			REAL_G vz_prim = MAD_G(R13, v.x, MAD_G(R23, v.y, R33 * v.z)) * sZInv;
 
-			REAL_G v_dot_v = MAD_G(vx_prim, vx_prim, MAD_G(vy_prim, vy_prim, vz_prim * vz_prim));
+			// OLD
+			/*REAL_G v_dot_v = MAD_G(vx_prim, vx_prim, MAD_G(vy_prim, vy_prim, vz_prim * vz_prim));
 			REAL_G O_dot_O = MAD_G(Ox_prim, Ox_prim, MAD_G(Oy_prim, Oy_prim, Oz_prim * Oz_prim));
 			REAL_G v_dot_O = MAD_G(vx_prim, Ox_prim, MAD_G(vy_prim, Oy_prim, vz_prim * Oz_prim));
 			REAL_G tmp1 = v_dot_O / v_dot_v;
@@ -1747,6 +1832,26 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 				alpha_next = tmp2 * __saturatef(expf(0.5f * (MAD_G(v_dot_O, tmp1, -O_dot_O) / (s * s)))); // !!! !!! !!!
 			#else
 				alpha_next = exp(0.5 * (MAD_G(v_dot_O, tmp1, -O_dot_O) / (s * s)));
+				alpha_next = (alpha_next < 0) ? 0 : alpha_next;
+				alpha_next = (alpha_next > 1) ? 1 : alpha_next;
+				alpha_next = tmp2 * alpha_next; // !!! !!! !!!
+			#endif*/
+
+			// NEW (MORE NUMERICALLY STABLE)
+			REAL_G v_dot_v = MAD_G(vx_prim, vx_prim, MAD_G(vy_prim, vy_prim, vz_prim * vz_prim));
+			REAL_G O_dot_O = MAD_G(Ox_prim, Ox_prim, MAD_G(Oy_prim, Oy_prim, Oz_prim * Oz_prim));
+			REAL_G v_dot_O = MAD_G(vx_prim, Ox_prim, MAD_G(vy_prim, Oy_prim, vz_prim * Oz_prim));
+			REAL_G tmp1 = v_dot_O / v_dot_v;
+			REAL_G tmp2 = 1 / (1 + EXP_G(-GC_1.w));
+
+			REAL_G vecx_tmp = MAD_G(-vx_prim, tmp1, Ox_prim); // !!! !!! !!!
+			REAL_G vecy_tmp = MAD_G(-vy_prim, tmp1, Oy_prim); // !!! !!! !!!
+			REAL_G vecz_tmp = MAD_G(-vz_prim, tmp1, Oz_prim); // !!! !!! !!!
+
+			#ifndef GRADIENT_OPTIX_USE_DOUBLE_PRECISION
+				alpha_next = tmp2 * __saturatef(expf(-0.5f * (MAD_G(vecx_tmp, vecx_tmp, MAD_G(vecy_tmp, vecy_tmp, vecz_tmp * vecz_tmp)) / (s * s)))); // !!! !!! !!!
+			#else
+				alpha_next = exp(-0.5 * (MAD_G(vecx_tmp, vecx_tmp, MAD_G(vecy_tmp, vecy_tmp, vecz_tmp * vecz_tmp)) / (s * s)));
 				alpha_next = (alpha_next < 0) ? 0 : alpha_next;
 				alpha_next = (alpha_next > 1) ? 1 : alpha_next;
 				alpha_next = tmp2 * alpha_next; // !!! !!! !!!
@@ -1776,9 +1881,15 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 
 			// *************************************************************************************
 
-			REAL_G vecx_tmp = tmp3 * MAD_G(-vx_prim, tmp1, Ox_prim); // !!! !!! !!!
+			// OLD
+			/*REAL_G vecx_tmp = tmp3 * MAD_G(-vx_prim, tmp1, Ox_prim); // !!! !!! !!!
 			REAL_G vecy_tmp = tmp3 * MAD_G(-vy_prim, tmp1, Oy_prim); // !!! !!! !!!
-			REAL_G vecz_tmp = tmp3 * MAD_G(-vz_prim, tmp1, Oz_prim); // !!! !!! !!!
+			REAL_G vecz_tmp = tmp3 * MAD_G(-vz_prim, tmp1, Oz_prim); // !!! !!! !!!*/
+
+			// NEW (MORE NUMERICALLY STABLE)
+			vecx_tmp = tmp3 * vecx_tmp; // !!! !!! !!!
+			vecy_tmp = tmp3 * vecy_tmp; // !!! !!! !!!
+			vecz_tmp = tmp3 * vecz_tmp; // !!! !!! !!!
 
 			// *************************************************************************************
 
@@ -2082,8 +2193,11 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 		v1.z = (beta2 * v1.z) + ((1.0f - beta2) * dL_dparam_1.z * dL_dparam_1.z);
 		v1.w = (beta2 * v1.w) + ((1.0f - beta2) * dL_dparam_1.w * dL_dparam_1.w);
 
-		float lr = lr_RGB * expf(params_OptiX.epoch * lr_RGB_exponential_decay_coefficient);
-		if (lr < 0.001f) lr = 0.001f;
+		float lr = (
+			(lr_RGB * expf(params_OptiX.epoch * lr_RGB_exponential_decay_coefficient) < lr_RGB_final) ?
+				lr_RGB_final :
+				lr_RGB * expf(params_OptiX.epoch * lr_RGB_exponential_decay_coefficient)
+		);
 
 		// R
 		GC_1.x -= ((lr * (m1.x * tmp1)) / (sqrtf(v1.x * tmp2) + epsilon));
@@ -2095,8 +2209,11 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 		GC_1.z -= ((lr * (m1.z * tmp1)) / (sqrtf(v1.z * tmp2) + epsilon));
 		GC_1.z = __saturatef(GC_1.z);
 
-		lr = lr_alpha * expf(params_OptiX.epoch * lr_alpha_exponential_decay_coefficient);
-		if (lr < 0.01f) lr = 0.01f;
+		lr = (
+			(lr_alpha * expf(params_OptiX.epoch * lr_alpha_exponential_decay_coefficient) < lr_alpha_final) ?
+				lr_alpha_final :
+				lr_alpha * expf(params_OptiX.epoch * lr_alpha_exponential_decay_coefficient)
+		);
 
 		// alpha
 		GC_1.w -= ((lr * (m1.w * tmp1)) / (sqrtf(v1.w * tmp2) + epsilon));
@@ -2120,8 +2237,12 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 		v2.z = (beta2 * v2.z) + ((1.0f - beta2) * dL_dparam_2.z * dL_dparam_2.z);
 		v2.w = (beta2 * v2.w) + ((1.0f - beta2) * dL_dparam_2.w * dL_dparam_2.w);
 
-		lr = scene_extent * lr_m * expf(params_OptiX.epoch * lr_m_exponential_decay_coefficient);
-		if (lr < 0.000003f) lr = 0.000003f;
+		lr = (
+			(lr_m * expf(params_OptiX.epoch * lr_m_exponential_decay_coefficient) < lr_m_final) ?
+				lr_m_final :
+				lr_m * expf(params_OptiX.epoch * lr_m_exponential_decay_coefficient)
+		);
+		lr = scene_extent * lr;
 
 		// mX, mY, mZ
 		dm = make_float3(
@@ -2130,8 +2251,12 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 			((lr * (m2.z * tmp1)) / (sqrtf(v2.z * tmp2) + epsilon))
 		);
 
-		lr = scene_extent * lr_s * expf(params_OptiX.epoch * lr_s_exponential_decay_coefficient);
-		if (lr < 0.001f) lr = 0.001f;
+		lr = (
+			(lr_s * expf(params_OptiX.epoch * lr_s_exponential_decay_coefficient) < lr_s_final) ?
+				lr_s_final:
+				lr_s * expf(params_OptiX.epoch * lr_s_exponential_decay_coefficient)
+		);
+		lr = scene_extent * lr;
 
 		// sX
 		GC_2.w -= ((lr * (m2.w * tmp1)) / (sqrtf(v2.w * tmp2) + epsilon));
@@ -2160,8 +2285,11 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 		// sZ
 		GC_3.y -= ((lr * (m3.y * tmp1)) / (sqrtf(v3.y * tmp2) + epsilon));
 
-		lr = lr_q * expf(params_OptiX.epoch * lr_q_exponential_decay_coefficient);
-		if (lr < 0.001f) lr = 0.001f;
+		lr = (
+			(lr_q * expf(params_OptiX.epoch * lr_q_exponential_decay_coefficient) < lr_q_final) ?
+				lr_q_final :
+				lr_q * expf(params_OptiX.epoch * lr_q_exponential_decay_coefficient)
+		);
 
 		// qr
 		GC_3.z -= ((lr * (m3.z * tmp1)) / (sqrtf(v3.z * tmp2) + epsilon));
@@ -2204,7 +2332,8 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 	bool densification_epoch = (
 		(params_OptiX.epoch >= densification_start_epoch) &&
 		(params_OptiX.epoch <= densification_end_epoch) &&
-		((params_OptiX.epoch % densification_frequency) == 0)
+		((params_OptiX.epoch % densification_frequency) == 0) &&
+		(params_OptiX.numberOfGaussians <= max_Gaussians_per_model) // !!!! !!! !!! 
 	);
 	
 	unsigned GaussInd;
@@ -2284,9 +2413,9 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 			GC_3.x = -logf((1.0f / scale.y) - 1.0f);
 			GC_3.y = -logf((1.0f / scale.z) - 1.0f);
 
-			float tmpX = sqrtf(11.3449f * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
-			float tmpY = sqrtf(11.3449f * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
-			float tmpZ = sqrtf(11.3449f * ((scale.x * scale.x * R31 * R31) + (scale.y * scale.y * R32 * R32) + (scale.z * scale.z * R33 * R33)));
+			float tmpX = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
+			float tmpY = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
+			float tmpZ = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R31 * R31) + (scale.y * scale.y * R32 * R32) + (scale.z * scale.z * R33 * R33)));
 
 			// *** *** *** *** ***
 
@@ -2379,9 +2508,9 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 						GC_3.x = -logf((1.0f / scale.y) - 1.0f);
 						GC_3.y = -logf((1.0f / scale.z) - 1.0f);
 
-						float tmpX = sqrtf(11.3449f * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
-						float tmpY = sqrtf(11.3449f * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
-						float tmpZ = sqrtf(11.3449f * ((scale.x * scale.x * R31 * R31) + (scale.y * scale.y * R32 * R32) + (scale.z * scale.z * R33 * R33)));
+						float tmpX = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
+						float tmpY = sqrtf(chi_square_squared_radius* ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
+						float tmpZ = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R31 * R31) + (scale.y * scale.y * R32 * R32) + (scale.z * scale.z * R33 * R33)));
 
 						// *** *** *** *** ***
 
@@ -2475,9 +2604,9 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 						GC_3.x = -logf((1.0f / scale.y) - 1.0f);
 						GC_3.y = -logf((1.0f / scale.z) - 1.0f);
 
-						float tmpX = sqrtf(11.3449f * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
-						float tmpY = sqrtf(11.3449f * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
-						float tmpZ = sqrtf(11.3449f * ((scale.x * scale.x * R31 * R31) + (scale.y * scale.y * R32 * R32) + (scale.z * scale.z * R33 * R33)));
+						float tmpX = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
+						float tmpY = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
+						float tmpZ = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R31 * R31) + (scale.y * scale.y * R32 * R32) + (scale.z * scale.z * R33 * R33)));
 
 						// *** *** *** *** ***
 
@@ -2571,9 +2700,9 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 					GC_3.x = -logf((1.0f / scale.y) - 1.0f);
 					GC_3.y = -logf((1.0f / scale.z) - 1.0f);
 					
-					float tmpX = sqrtf(11.3449f * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
-					float tmpY = sqrtf(11.3449f * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
-					float tmpZ = sqrtf(11.3449f * ((scale.x * scale.x * R31 * R31) + (scale.y * scale.y * R32 * R32) + (scale.z * scale.z * R33 * R33)));
+					float tmpX = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
+					float tmpY = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
+					float tmpZ = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R31 * R31) + (scale.y * scale.y * R32 * R32) + (scale.z * scale.z * R33 * R33)));
 
 					// *** *** *** *** ***
 
@@ -3251,10 +3380,15 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
 
+	// !!! !!! !!!
+	int numberOfGaussiansOld = params_OptiX.numberOfGaussians; // !!! !!! !!!
+	// !!! !!! !!!
+
 	if (
 		(params_OptiX.epoch >= densification_start_epoch_host) &&
 		(params_OptiX.epoch <= densification_end_epoch_host) &&
-		((params_OptiX.epoch % densification_frequency_host) == 0)
+		((params_OptiX.epoch % densification_frequency_host) == 0) &&
+		(numberOfGaussiansOld <= max_Gaussians_per_model_host) // !!! !!! !!!
 	) {
 		error_CUDA = cudaMemset(params_OptiX.counter1, 0, sizeof(unsigned) * 1);
 		if (error_CUDA != cudaSuccess) goto Error;
@@ -3265,6 +3399,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 	//	DumpParameters(params_OptiX);
 	//}
 
+	// !!! !!! !!!
 	error_CUDA = cudaMemcpyToSymbol(auxiliary_values, &initial_values, sizeof(SAuxiliaryValues) * 1);
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -3274,6 +3409,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 
 	SAuxiliaryValues auxiliary_values_local;
 
+	// !!! !!! !!!
 	error_CUDA = cudaMemcpyFromSymbol(&auxiliary_values_local, auxiliary_values, sizeof(SAuxiliaryValues) * 1);
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -3289,7 +3425,8 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 	if (
 		(params_OptiX.epoch >= densification_start_epoch_host) &&
 		(params_OptiX.epoch <= densification_end_epoch_host) &&
-		((params_OptiX.epoch % densification_frequency_host) == 0)
+		((params_OptiX.epoch % densification_frequency_host) == 0) &&
+		(numberOfGaussiansOld <= max_Gaussians_per_model_host) // !!! !!! !!!
 	) {
 		error_CUDA = cudaMemcpy(&params_OptiX.numberOfGaussians, params_OptiX.counter1, sizeof(unsigned) * 1, cudaMemcpyDeviceToHost);
 		if (error_CUDA != cudaSuccess) goto Error;
@@ -3301,7 +3438,8 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 	if (
 		(params_OptiX.epoch >= densification_start_epoch_host) &&
 		(params_OptiX.epoch <= densification_end_epoch_host) &&
-		((params_OptiX.epoch % densification_frequency_host) == 0)
+		((params_OptiX.epoch % densification_frequency_host) == 0) &&
+		(numberOfGaussiansOld <= max_Gaussians_per_model_host) // !!! !!! !!!
 	) {
 		int tmp1;
 
@@ -3326,7 +3464,12 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		tmp2 = params_OptiX.v31; params_OptiX.v31 = params_OptiX.v32; params_OptiX.v32 = (float4 *)tmp2;
 		tmp2 = params_OptiX.v41; params_OptiX.v41 = params_OptiX.v42; params_OptiX.v42 = (float2 *)tmp2;
 
-		if ((params_OptiX.numberOfGaussians * 2) > params_OptiX.maxNumberOfGaussians2) {
+		// If after the last densification the number of Gaussians exceeds the threshold, there will be no more densification, so we don't have
+		// to reserve the memory for the new Gaussians
+		if (
+			((params_OptiX.numberOfGaussians * 2) > params_OptiX.maxNumberOfGaussians2) &&
+			(params_OptiX.numberOfGaussians <= max_Gaussians_per_model_host) // !!! !!! !!!
+		) {
 			params_OptiX.maxNumberOfGaussians2 = params_OptiX.numberOfGaussians * 3;
 
 			// *************************************************************************************
@@ -3569,14 +3712,23 @@ Error:
 bool SetConfigurationOptiX(SOptiXRenderConfig& config_OptiX) {
 	cudaMemcpyToSymbol(lr_RGB, &config_OptiX.lr_RGB, sizeof(float));
 	cudaMemcpyToSymbol(lr_RGB_exponential_decay_coefficient, &config_OptiX.lr_RGB_exponential_decay_coefficient, sizeof(float));
+	cudaMemcpyToSymbol(lr_RGB_final, &config_OptiX.lr_RGB_final, sizeof(float));
+
 	cudaMemcpyToSymbol(lr_alpha, &config_OptiX.lr_alpha, sizeof(float));
 	cudaMemcpyToSymbol(lr_alpha_exponential_decay_coefficient, &config_OptiX.lr_alpha_exponential_decay_coefficient, sizeof(float));
+	cudaMemcpyToSymbol(lr_alpha_final, &config_OptiX.lr_alpha_final, sizeof(float));
+
 	cudaMemcpyToSymbol(lr_m, &config_OptiX.lr_m, sizeof(float));
 	cudaMemcpyToSymbol(lr_m_exponential_decay_coefficient, &config_OptiX.lr_m_exponential_decay_coefficient, sizeof(float));
+	cudaMemcpyToSymbol(lr_m_final, &config_OptiX.lr_m_final, sizeof(float));
+
 	cudaMemcpyToSymbol(lr_s, &config_OptiX.lr_s, sizeof(float));
 	cudaMemcpyToSymbol(lr_s_exponential_decay_coefficient, &config_OptiX.lr_s_exponential_decay_coefficient, sizeof(float));
+	cudaMemcpyToSymbol(lr_s_final, &config_OptiX.lr_s_final, sizeof(float));
+
 	cudaMemcpyToSymbol(lr_q, &config_OptiX.lr_q, sizeof(float));
 	cudaMemcpyToSymbol(lr_q_exponential_decay_coefficient, &config_OptiX.lr_q_exponential_decay_coefficient, sizeof(float));
+	cudaMemcpyToSymbol(lr_q_final, &config_OptiX.lr_q_final, sizeof(float));
 
 	cudaMemcpyToSymbol(densification_frequency, &config_OptiX.densification_frequency, sizeof(int));
 	densification_frequency_host = config_OptiX.densification_frequency;
@@ -3607,8 +3759,14 @@ bool SetConfigurationOptiX(SOptiXRenderConfig& config_OptiX) {
 
 	last_significant_Gauss_alpha_gradient_precision_host = config_OptiX.last_significant_Gauss_alpha_gradient_precision;
 
+	cudaMemcpyToSymbol(chi_square_squared_radius, &config_OptiX.chi_square_squared_radius, sizeof(float));
+	chi_square_squared_radius_host = config_OptiX.chi_square_squared_radius;
+
 	cudaMemcpyToSymbol(max_Gaussians_per_ray, &config_OptiX.max_Gaussians_per_ray, sizeof(int));
 	max_Gaussians_per_ray_host = config_OptiX.max_Gaussians_per_ray;
+
+	cudaMemcpyToSymbol(max_Gaussians_per_model, &config_OptiX.max_Gaussians_per_model, sizeof(int));
+	max_Gaussians_per_model_host = config_OptiX.max_Gaussians_per_model;
 
 	return true;
 }
