@@ -1,13 +1,4 @@
-- Improved numerical stability for the pieces of code computing ray-Gaussian intersection and the modulated opacity parameter value: alpha;
-
-- In the previous release, exceeding the maximum allowed number of Gaussians caused breaking the TRAINING process. Now it causes instead breaking the DENSIFICATION process;
-
-- Removed the piece of code in the Win64 app, that clips the Gaussians scale parameters coefficients, since it's done in the OptiX renderer initialization function;
-
-- Introducing the following macroparameters to the configuration file:
-* Chi square squared radius for the Gaussians;
-* lr_RGB final value (lr_RGB minimum clipping threshold);
-* lr_alpha final value (lr_alpha minimum clipping threshold);
-* lr_m final value (lr_m minimum clipping threshold);
-* lr_s final value (lr_s minimum clipping threshold);
-* lr_q final value (lr_q minimum clipping threshold);
+- Fixed the minor and infrequent bug in the gradient computation;
+- Improved the memory management of the Gaussian components and the ADAM m and v vectors (2x decreased memory demand);
+- Added the preprocessor definition SSIM_REDUCE_MEMORY_OVERHEAD, that allows to improve the memory management of the arrays used to compute the SSIM loss function gradient;
+- Added some piece of code that allows to mix the Gaussians with the mesh geometry and performs the visualization;

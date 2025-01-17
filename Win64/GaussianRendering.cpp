@@ -22,6 +22,10 @@
 #include "Renderer.h"
 #include "GaussianRendering.h"
 
+// !!! !!! !!!
+#include "C3DScene.h"
+// !!! !!! !!!
+
 #define MAX_LOADSTRING 100
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
@@ -88,6 +92,7 @@ float FOV;
 SRenderParams *params;
 SCUDARenderParams dev_params;
 SOptiXRenderParams params_OptiX;
+SOptiXRenderParamsMesh params_OptiXMesh;
 
 //   -*-   -*-   -*-   -*-   -*-
 
@@ -828,9 +833,47 @@ bool result;
 		epochNumStart = epochNum;
 	} else {
 		// LOAD FROM SAVED PARAMS
+		C3DScene *scene = new C3DScene();
+		int fCntOld = scene->fCnt;
+		int vCntOld = scene->vCnt;
+		int nCntOld = scene->nCnt;
+		scene->LoadOBJFile("dragon_vrip.obj", 0);
+
+		SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+		CMat4Df m = CMat4Df::Translation(
+			CVec3Df(
+				-0.5f * (sceneBounds.rB + sceneBounds.lB),
+				-0.5f * (sceneBounds.dB + sceneBounds.uB),
+				-0.5f * (sceneBounds.fB + sceneBounds.bB)
+			)
+		);
+		scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+		m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
+		scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+		m = CMat4Df::OXRotation(M_PI / 2.0f);
+		scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+		m = CMat4Df::Translation(CVec3Df(0.0f, -0.75f, 0.1f));
+		scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+		sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+		swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.lB, sceneBounds.uB, sceneBounds.bB);
+		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+		swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
+		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+		swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
+		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+		//******************************************************************************************
+
 		epochNum = config.start_epoch;
 	
 		result = InitializeOptiXRenderer(params[0], params_OptiX, true, epochNum);
+		//result = InitializeOptiXRendererMesh(params[0], params_OptiX, scene, params_OptiXMesh, true, epochNum);
 		swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
@@ -1107,6 +1150,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 					switch (phase) {
 						case 2 : {
 							if (!cameraChanged) {
+							//if (false) { // !!! !!! !!!
 								//break;
 
 								int NUMBER_OF_POSES = 100;
@@ -1385,6 +1429,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								params_OptiX.copyBitmapToHostMemory = true;
 
 								result = RenderOptiX(params_OptiX);
+								//result = RenderOptiXMesh(params_OptiX, params_OptiXMesh);
 								swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 

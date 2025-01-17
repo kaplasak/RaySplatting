@@ -3,6 +3,24 @@
 #include "optix_stubs.h"
 #include "optix_function_table_definition.h"
 
+// !!! !!! !!!
+#include "C3DScene.h"
+#include <thrust/device_vector.h>
+#include <thrust/scan.h>
+#include <thrust/gather.h>
+#include <thrust/reduce.h>
+// !!! !!! !!!
+
+// *************************************************************************************************
+
+// !!! !!! !!! EXPERIMENTAL !!! !!! !!!
+struct AABB { float a; float b; float c; float d; float e; float f; };
+int *needsToBeRemoved_host;
+__device__ int *needsToBeRemoved;
+int *Gaussians_indices_after_removal_host;
+int *scatterBuffer;
+// !!! !!! !!! EXPERIMENTAL !!! !!! !!!
+
 // *************************************************************************************************
 
 struct SAuxiliaryValues {
@@ -362,8 +380,7 @@ bool InitializeOptiXRenderer(
 
 	if (!loadFromFile) {
 		params_OptiX.numberOfGaussians = params.numberOfGaussians; // !!! !!! !!!
-		params_OptiX.maxNumberOfGaussians1 = params_OptiX.numberOfGaussians; // !!! !!! !!!
-		params_OptiX.maxNumberOfGaussians2 = params_OptiX.numberOfGaussians * 3; // !!! !!! !!!
+		params_OptiX.maxNumberOfGaussians = params_OptiX.numberOfGaussians * 2.25f; // !!! !!! !!!
 	} else {
 		FILE *f;
 
@@ -375,8 +392,7 @@ bool InitializeOptiXRenderer(
 		params_OptiX.numberOfGaussians = ftell(f) / sizeof(float4); // !!! !!! !!!
 		fclose(f);
 
-		params_OptiX.maxNumberOfGaussians1 = params_OptiX.numberOfGaussians; // !!! !!! !!!
-		params_OptiX.maxNumberOfGaussians2 = params_OptiX.numberOfGaussians * 3; // !!! !!! !!!
+		params_OptiX.maxNumberOfGaussians = params_OptiX.numberOfGaussians * 2.25f; // !!! !!! !!!
 	}
 
 	// *********************************************************************************************
@@ -537,28 +553,30 @@ bool InitializeOptiXRenderer(
 
 	// *********************************************************************************************
 
-	error_CUDA = cudaMalloc(&params_OptiX.GC_part_1_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&needsToBeRemoved_host, sizeof(int) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.GC_part_1_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMemcpyToSymbol(needsToBeRemoved, &needsToBeRemoved_host, sizeof(int *));
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.GC_part_2_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&Gaussians_indices_after_removal_host, sizeof(int) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.GC_part_2_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&scatterBuffer, sizeof(float) * 6 * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.GC_part_3_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+	// *********************************************************************************************
+
+	error_CUDA = cudaMalloc(&params_OptiX.GC_part_1_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.GC_part_3_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&params_OptiX.GC_part_2_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.GC_part_4_1, sizeof(float2) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&params_OptiX.GC_part_3_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.GC_part_4_2, sizeof(float2) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&params_OptiX.GC_part_4_1, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	error_CUDA = cudaMemcpy(params_OptiX.GC_part_1_1, GC_part_1, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
@@ -580,7 +598,7 @@ bool InitializeOptiXRenderer(
 
 	// *********************************************************************************************
 
-	error_CUDA = cudaMalloc(&params_OptiX.aabbBuffer, sizeof(float) * 6 * params_OptiX.maxNumberOfGaussians2); // !!! !!! !!!
+	error_CUDA = cudaMalloc(&params_OptiX.aabbBuffer, sizeof(float) * 6 * params_OptiX.maxNumberOfGaussians); // !!! !!! !!!
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	error_CUDA = cudaMemcpy(params_OptiX.aabbBuffer, aabbs, sizeof(float) * 6 * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
@@ -739,16 +757,16 @@ bool InitializeOptiXOptimizer(
 	error_CUDA = cudaMalloc(&params_OptiX.bitmap_ref, sizeof(unsigned) * params_OptiX.width * params_OptiX.width * params.NUMBER_OF_POSES);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_1, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_1, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_2, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_2, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_3, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_3, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_4, sizeof(REAL2_G) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_4, sizeof(REAL2_G) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	error_CUDA = cudaMalloc(&params_OptiX.loss_device, sizeof(double) * 1);
@@ -757,52 +775,28 @@ bool InitializeOptiXOptimizer(
 	error_CUDA = cudaMalloc(&params_OptiX.Gaussians_indices, sizeof(int) * max_Gaussians_per_ray_host * params_OptiX.width * params_OptiX.width);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.m11, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&params_OptiX.m11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.m12, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&params_OptiX.m21, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.m21, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&params_OptiX.m31, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.m22, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&params_OptiX.m41, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.m31, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&params_OptiX.v11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.m32, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&params_OptiX.v21, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.m41, sizeof(float2) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&params_OptiX.v31, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.m42, sizeof(float2) * params_OptiX.maxNumberOfGaussians2);
-	if (error_CUDA != cudaSuccess) goto Error;
-
-	error_CUDA = cudaMalloc(&params_OptiX.v11, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
-	if (error_CUDA != cudaSuccess) goto Error;
-
-	error_CUDA = cudaMalloc(&params_OptiX.v12, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-	if (error_CUDA != cudaSuccess) goto Error;
-
-	error_CUDA = cudaMalloc(&params_OptiX.v21, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
-	if (error_CUDA != cudaSuccess) goto Error;
-
-	error_CUDA = cudaMalloc(&params_OptiX.v22, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-	if (error_CUDA != cudaSuccess) goto Error;
-
-	error_CUDA = cudaMalloc(&params_OptiX.v31, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
-	if (error_CUDA != cudaSuccess) goto Error;
-
-	error_CUDA = cudaMalloc(&params_OptiX.v32, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-	if (error_CUDA != cudaSuccess) goto Error;
-
-	error_CUDA = cudaMalloc(&params_OptiX.v41, sizeof(float2) * params_OptiX.maxNumberOfGaussians1);
-	if (error_CUDA != cudaSuccess) goto Error;
-
-	error_CUDA = cudaMalloc(&params_OptiX.v42, sizeof(float2) * params_OptiX.maxNumberOfGaussians2);
+	error_CUDA = cudaMalloc(&params_OptiX.v41, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	error_CUDA = cudaMalloc(&params_OptiX.counter1, sizeof(unsigned) * 1);
@@ -819,28 +813,28 @@ bool InitializeOptiXOptimizer(
 	// ************************************************************************************************
 
 	if (!loadFromFile) {
-		error_CUDA = cudaMemset(params_OptiX.m11, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+		error_CUDA = cudaMemset(params_OptiX.m11, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.m21, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+		error_CUDA = cudaMemset(params_OptiX.m21, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.m31, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+		error_CUDA = cudaMemset(params_OptiX.m31, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.m41, 0, sizeof(float2) * params_OptiX.maxNumberOfGaussians1);
+		error_CUDA = cudaMemset(params_OptiX.m41, 0, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.v11, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+		error_CUDA = cudaMemset(params_OptiX.v11, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.v21, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+		error_CUDA = cudaMemset(params_OptiX.v21, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.v31, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians1);
+		error_CUDA = cudaMemset(params_OptiX.v31, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.v41, 0, sizeof(float2) * params_OptiX.maxNumberOfGaussians1);
+		error_CUDA = cudaMemset(params_OptiX.v41, 0, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
 		if (error_CUDA != cudaSuccess) goto Error;
 	} else {
 		void *buf = malloc(sizeof(float4) * params_OptiX.numberOfGaussians);
@@ -919,6 +913,7 @@ bool InitializeOptiXOptimizer(
 
 	// ************************************************************************************************
 
+#ifndef SSIM_REDUCE_MEMORY_OVERHEAD
 	error_CUDA = cudaMalloc(&params_OptiX.bitmap_ref_R, sizeof(REAL_G) * arraySizeReal * params.NUMBER_OF_POSES);
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -936,6 +931,25 @@ bool InitializeOptiXOptimizer(
 
 	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_ref_B, sizeof(REAL_G) * arraySizeReal * params.NUMBER_OF_POSES);
 	if (error_CUDA != cudaSuccess) goto Error;
+#else
+	error_CUDA = cudaMalloc(&params_OptiX.bitmap_ref_R, sizeof(REAL_G) * arraySizeReal * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.bitmap_ref_G, sizeof(REAL_G) * arraySizeReal * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.bitmap_ref_B, sizeof(REAL_G) * arraySizeReal * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_ref_R, sizeof(REAL_G) * arraySizeReal * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_ref_G, sizeof(REAL_G) * arraySizeReal * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_ref_B, sizeof(REAL_G) * arraySizeReal * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+#endif
 
 	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_out_bitmap_ref_R, sizeof(REAL_G) * arraySizeReal);
 	if (error_CUDA != cudaSuccess) goto Error;
@@ -946,6 +960,7 @@ bool InitializeOptiXOptimizer(
 	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_out_bitmap_ref_B, sizeof(REAL_G) * arraySizeReal);
 	if (error_CUDA != cudaSuccess) goto Error;
 
+#ifndef SSIM_REDUCE_MEMORY_OVERHEAD
 	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_ref_R_square, sizeof(REAL_G) * arraySizeReal * params.NUMBER_OF_POSES);
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -954,6 +969,16 @@ bool InitializeOptiXOptimizer(
 
 	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_ref_B_square, sizeof(REAL_G) * arraySizeReal * params.NUMBER_OF_POSES);
 	if (error_CUDA != cudaSuccess) goto Error;
+#else
+	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_ref_R_square, sizeof(REAL_G) * arraySizeReal * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_ref_G_square, sizeof(REAL_G) * arraySizeReal * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.mu_bitmap_ref_B_square, sizeof(REAL_G) * arraySizeReal * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+#endif
 
 	error_CUDA = cudaMalloc(&params_OptiX.bitmap_out_R, sizeof(REAL_G) * arraySizeReal);
 	if (error_CUDA != cudaSuccess) goto Error;
@@ -1008,6 +1033,7 @@ bool InitializeOptiXOptimizer(
 
 	// ************************************************************************************************
 
+#ifndef SSIM_REDUCE_MEMORY_OVERHEAD
 	// Bufor zosta³ uzupe³niony zerami przy okazji tworzenia kernela Gaussowskiego
 	for (int pose = 0; pose < params.NUMBER_OF_POSES; ++pose) {
 		// R channel
@@ -1161,6 +1187,7 @@ bool InitializeOptiXOptimizer(
 		error_CUFFT = IDFFT_G(params_OptiX.planc2r, params_OptiX.F_2, params_OptiX.mu_bitmap_ref_B_square + (pose * arraySizeReal));
 		if (error_CUFFT != CUFFT_SUCCESS) goto Error;
 	}
+#endif
 
 	// ************************************************************************************************
 
@@ -1473,7 +1500,10 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 			// !!! !!! !!!
 			if ((T * (1 - alpha_next) < ((REAL)ray_termination_T_threshold)) || isnan(tmp3)) {
 				dI_dalpha = MAD_G(GC_1.x, d_dR_dalpha, MAD_G(GC_1.y, d_dG_dalpha, GC_1.z * d_dB_dalpha)); // !!! !!! !!!
-				break;
+				
+				if (k < max_Gaussians_per_ray) break; // !!! !!! !!!
+				
+				tmp3 = dI_dalpha; // !!! !!! !!!
 			}
 			// !!! !!! !!!
 
@@ -1669,9 +1699,9 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 
 		// *****************************************************************************************
 
-		if (GaussInd != -1) {
+		if ((GaussInd != -1) && (k < max_Gaussians_per_ray)) { // !!! !!! !!!
 			int LastGaussInd = GaussInd;
-			while (k  <max_Gaussians_per_ray) {
+			while (k < max_Gaussians_per_ray) {
 				int GaussInd = params_OptiX.Gaussians_indices[(k * params_OptiX.width * params_OptiX.width) + ((i * params_OptiX.width) + j)]; // !!! !!! !!!
 				++k;
 
@@ -2346,14 +2376,18 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 		}
 		__syncthreads();
 
+		// !!! !!! !!!
+		//isMovedEnough = false; // !!! !!! !!!
+		// !!! !!! !!!
+
 		if (tid < params_OptiX.numberOfGaussians) {
 			if ((isOpaqueEnough) && (isBigEnough) && (isNotTooBig)) {
 				if (isMovedEnough) {
-					GaussInd = atomicAdd(&counter1, 2);
-					if (isBigEnoughToSplit) sampleNum = atomicAdd(&counter2, 6);
-				} else
 					GaussInd = atomicAdd(&counter1, 1);
-			}
+					if (isBigEnoughToSplit) sampleNum = atomicAdd(&counter2, 6);
+				}
+			} else
+				needsToBeRemoved[tid] = 0; // !!! !!! !!! EXPERIMENTAL !!! !!! !!!*/
 		}
 		__syncthreads();
 
@@ -2363,7 +2397,7 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 		}
 		__syncthreads();
 
-		GaussInd += counter1;
+		GaussInd += (params_OptiX.numberOfGaussians + counter1);
 		sampleNum += counter2;
 	}
 
@@ -2509,30 +2543,30 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 						GC_3.y = -logf((1.0f / scale.z) - 1.0f);
 
 						float tmpX = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
-						float tmpY = sqrtf(chi_square_squared_radius* ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
+						float tmpY = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
 						float tmpZ = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R31 * R31) + (scale.y * scale.y * R32 * R32) + (scale.z * scale.z * R33 * R33)));
 
 						// *** *** *** *** ***
 
-						((float4 *)params_OptiX.GC_part_1_2)[GaussInd] = GC_1;
-						((float4 *)params_OptiX.m12)[GaussInd] = m1;
-						((float4 *)params_OptiX.v12)[GaussInd] = v1;
+						((float4 *)params_OptiX.GC_part_1_1)[tid] = GC_1;
+						((float4 *)params_OptiX.m11)[tid] = m1;
+						((float4 *)params_OptiX.v11)[tid] = v1;
 
 						GC_2.x = P1.x;
 						GC_2.y = P1.y;
 						GC_2.z = P1.z;
-						
-						((float4 *)params_OptiX.GC_part_2_2)[GaussInd] = GC_2;
-						((float4 *)params_OptiX.m22)[GaussInd] = m2;
-						((float4 *)params_OptiX.v22)[GaussInd] = v2;
 
-						((float4 *)params_OptiX.GC_part_3_2)[GaussInd] = GC_3;
-						((float4 *)params_OptiX.m32)[GaussInd] = m3;
-						((float4 *)params_OptiX.v32)[GaussInd] = v3;
+						((float4 *)params_OptiX.GC_part_2_1)[tid] = GC_2;
+						((float4 *)params_OptiX.m21)[tid] = m2;
+						((float4 *)params_OptiX.v21)[tid] = v2;
 
-						((float2 *)params_OptiX.GC_part_4_2)[GaussInd] = GC_4;
-						((float2 *)params_OptiX.m42)[GaussInd] = m4;
-						((float2 *)params_OptiX.v42)[GaussInd] = v4;
+						((float4 *)params_OptiX.GC_part_3_1)[tid] = GC_3;
+						((float4 *)params_OptiX.m31)[tid] = m3;
+						((float4 *)params_OptiX.v31)[tid] = v3;
+
+						((float2 *)params_OptiX.GC_part_4_1)[tid] = GC_4;
+						((float2 *)params_OptiX.m41)[tid] = m4;
+						((float2 *)params_OptiX.v41)[tid] = v4;
 
 						lower_bound.x = GC_2.x - tmpX; // !!! !!! !!!
 						upper_bound.x = GC_2.x + tmpX; // !!! !!! !!!
@@ -2543,36 +2577,36 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 						lower_bound.z = GC_2.z - tmpZ; // !!! !!! !!!
 						upper_bound.z = GC_2.z + tmpZ; // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 0] = GC_2.x - tmpX; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 3] = GC_2.x + tmpX; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 0] = GC_2.x - tmpX; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 3] = GC_2.x + tmpX; // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 1] = GC_2.y - tmpY; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 4] = GC_2.y + tmpY; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 1] = GC_2.y - tmpY; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 4] = GC_2.y + tmpY; // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 2] = GC_2.z - tmpZ; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 5] = GC_2.z + tmpZ; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 2] = GC_2.z - tmpZ; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 5] = GC_2.z + tmpZ; // !!! !!! !!!
 
 						// *** *** *** *** ***
 
-						((float4 *)params_OptiX.GC_part_1_2)[GaussInd + 1] = GC_1;
-						((float4 *)params_OptiX.m12)[GaussInd + 1] = m1;
-						((float4 *)params_OptiX.v12)[GaussInd + 1] = v1;
+						((float4 *)params_OptiX.GC_part_1_1)[GaussInd] = GC_1;
+						((float4 *)params_OptiX.m11)[GaussInd] = m1;
+						((float4 *)params_OptiX.v11)[GaussInd] = v1;
 
 						GC_2.x = P2.x;
 						GC_2.y = P2.y;
 						GC_2.z = P2.z;
 
-						((float4 *)params_OptiX.GC_part_2_2)[GaussInd + 1] = GC_2;
-						((float4 *)params_OptiX.m22)[GaussInd + 1] = m2;
-						((float4 *)params_OptiX.v22)[GaussInd + 1] = v2;
+						((float4 *)params_OptiX.GC_part_2_1)[GaussInd] = GC_2;
+						((float4 *)params_OptiX.m21)[GaussInd] = m2;
+						((float4 *)params_OptiX.v21)[GaussInd] = v2;
 
-						((float4 *)params_OptiX.GC_part_3_2)[GaussInd + 1] = GC_3;
-						((float4 *)params_OptiX.m32)[GaussInd + 1] = m3;
-						((float4 *)params_OptiX.v32)[GaussInd + 1] = v3;
+						((float4 *)params_OptiX.GC_part_3_1)[GaussInd] = GC_3;
+						((float4 *)params_OptiX.m31)[GaussInd] = m3;
+						((float4 *)params_OptiX.v31)[GaussInd] = v3;
 
-						((float2 *)params_OptiX.GC_part_4_2)[GaussInd + 1] = GC_4;
-						((float2 *)params_OptiX.m42)[GaussInd + 1] = m4;
-						((float2 *)params_OptiX.v42)[GaussInd + 1] = v4;
+						((float2 *)params_OptiX.GC_part_4_1)[GaussInd] = GC_4;
+						((float2 *)params_OptiX.m41)[GaussInd] = m4;
+						((float2 *)params_OptiX.v41)[GaussInd] = v4;
 
 						lower_bound.x = ((GC_2.x - tmpX < lower_bound.x) ? GC_2.x - tmpX : lower_bound.x); // !!! !!! !!!
 						upper_bound.x = ((GC_2.x + tmpX > upper_bound.x) ? GC_2.x + tmpX : upper_bound.x); // !!! !!! !!!
@@ -2583,14 +2617,14 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 						lower_bound.z = ((GC_2.z - tmpZ < lower_bound.z) ? GC_2.z - tmpZ : lower_bound.z); // !!! !!! !!!
 						upper_bound.z = ((GC_2.z + tmpZ > upper_bound.z) ? GC_2.z + tmpZ : upper_bound.z); // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 0] = GC_2.x - tmpX; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 3] = GC_2.x + tmpX; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 0] = GC_2.x - tmpX; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 3] = GC_2.x + tmpX; // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 1] = GC_2.y - tmpY; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 4] = GC_2.y + tmpY; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 1] = GC_2.y - tmpY; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 4] = GC_2.y + tmpY; // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 2] = GC_2.z - tmpZ; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 5] = GC_2.z + tmpZ; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 2] = GC_2.z - tmpZ; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 5] = GC_2.z + tmpZ; // !!! !!! !!!
 					} else {
 						scale.x = ((scale.x < scene_extent * min_s_coefficients_clipping_threshold) ? scene_extent * min_s_coefficients_clipping_threshold : scale.x);
 						scale.y = ((scale.y < scene_extent * min_s_coefficients_clipping_threshold) ? scene_extent * min_s_coefficients_clipping_threshold : scale.y);
@@ -2610,21 +2644,21 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 
 						// *** *** *** *** ***
 
-						((float4 *)params_OptiX.GC_part_1_2)[GaussInd] = GC_1;
-						((float4 *)params_OptiX.m12)[GaussInd] = m1;
-						((float4 *)params_OptiX.v12)[GaussInd] = v1;
+						((float4 *)params_OptiX.GC_part_1_1)[tid] = GC_1;
+						((float4 *)params_OptiX.m11)[tid] = m1;
+						((float4 *)params_OptiX.v11)[tid] = v1;
 
-						((float4 *)params_OptiX.GC_part_2_2)[GaussInd] = GC_2;
-						((float4 *)params_OptiX.m22)[GaussInd] = m2;
-						((float4 *)params_OptiX.v22)[GaussInd] = v2;
+						((float4 *)params_OptiX.GC_part_2_1)[tid] = GC_2;
+						((float4 *)params_OptiX.m21)[tid] = m2;
+						((float4 *)params_OptiX.v21)[tid] = v2;
 
-						((float4 *)params_OptiX.GC_part_3_2)[GaussInd] = GC_3;
-						((float4 *)params_OptiX.m32)[GaussInd] = m3;
-						((float4 *)params_OptiX.v32)[GaussInd] = v3;
+						((float4 *)params_OptiX.GC_part_3_1)[tid] = GC_3;
+						((float4 *)params_OptiX.m31)[tid] = m3;
+						((float4 *)params_OptiX.v31)[tid] = v3;
 
-						((float2 *)params_OptiX.GC_part_4_2)[GaussInd] = GC_4;
-						((float2 *)params_OptiX.m42)[GaussInd] = m4;
-						((float2 *)params_OptiX.v42)[GaussInd] = v4;
+						((float2 *)params_OptiX.GC_part_4_1)[tid] = GC_4;
+						((float2 *)params_OptiX.m41)[tid] = m4;
+						((float2 *)params_OptiX.v41)[tid] = v4;
 
 						lower_bound.x = GC_2.x - tmpX; // !!! !!! !!!
 						upper_bound.x = GC_2.x + tmpX; // !!! !!! !!!
@@ -2635,20 +2669,20 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 						lower_bound.z = GC_2.z - tmpZ; // !!! !!! !!!
 						upper_bound.z = GC_2.z + tmpZ; // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 0] = GC_2.x - tmpX; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 3] = GC_2.x + tmpX; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 0] = GC_2.x - tmpX; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 3] = GC_2.x + tmpX; // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 1] = GC_2.y - tmpY; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 4] = GC_2.y + tmpY; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 1] = GC_2.y - tmpY; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 4] = GC_2.y + tmpY; // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 2] = GC_2.z - tmpZ; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 5] = GC_2.z + tmpZ; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 2] = GC_2.z - tmpZ; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(tid * 6) + 5] = GC_2.z + tmpZ; // !!! !!! !!!
 
 						// *** *** *** *** ***
 
-						((float4 *)params_OptiX.GC_part_1_2)[GaussInd + 1] = GC_1;
-						((float4 *)params_OptiX.m12)[GaussInd + 1] = m1;
-						((float4 *)params_OptiX.v12)[GaussInd + 1] = v1;
+						((float4 *)params_OptiX.GC_part_1_1)[GaussInd] = GC_1;
+						((float4 *)params_OptiX.m11)[GaussInd] = m1;
+						((float4 *)params_OptiX.v11)[GaussInd] = v1;
 
 						// mX
 						GC_2.x -= dm.x;
@@ -2657,17 +2691,17 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 						// mZ
 						GC_2.z -= dm.z;
 
-						((float4 *)params_OptiX.GC_part_2_2)[GaussInd + 1] = GC_2;
-						((float4 *)params_OptiX.m22)[GaussInd + 1] = m2;
-						((float4 *)params_OptiX.v22)[GaussInd + 1] = v2;
+						((float4 *)params_OptiX.GC_part_2_1)[GaussInd] = GC_2;
+						((float4 *)params_OptiX.m21)[GaussInd] = m2;
+						((float4 *)params_OptiX.v21)[GaussInd] = v2;
 
-						((float4 *)params_OptiX.GC_part_3_2)[GaussInd + 1] = GC_3;
-						((float4 *)params_OptiX.m32)[GaussInd + 1] = m3;
-						((float4 *)params_OptiX.v32)[GaussInd + 1] = v3;
+						((float4 *)params_OptiX.GC_part_3_1)[GaussInd] = GC_3;
+						((float4 *)params_OptiX.m31)[GaussInd] = m3;
+						((float4 *)params_OptiX.v31)[GaussInd] = v3;
 
-						((float2 *)params_OptiX.GC_part_4_2)[GaussInd + 1] = GC_4;
-						((float2 *)params_OptiX.m42)[GaussInd + 1] = m4;
-						((float2 *)params_OptiX.v42)[GaussInd + 1] = v4;
+						((float2 *)params_OptiX.GC_part_4_1)[GaussInd] = GC_4;
+						((float2 *)params_OptiX.m41)[GaussInd] = m4;
+						((float2 *)params_OptiX.v41)[GaussInd] = v4;
 
 						lower_bound.x = ((GC_2.x - tmpX < lower_bound.x) ? GC_2.x - tmpX : lower_bound.x); // !!! !!! !!!
 						upper_bound.x = ((GC_2.x + tmpX > upper_bound.x) ? GC_2.x + tmpX : upper_bound.x); // !!! !!! !!!
@@ -2678,14 +2712,14 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 						lower_bound.z = ((GC_2.z - tmpZ < lower_bound.z) ? GC_2.z - tmpZ : lower_bound.z); // !!! !!! !!!
 						upper_bound.z = ((GC_2.z + tmpZ > upper_bound.z) ? GC_2.z + tmpZ : upper_bound.z); // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 0] = GC_2.x - tmpX; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 3] = GC_2.x + tmpX; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 0] = GC_2.x - tmpX; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 3] = GC_2.x + tmpX; // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 1] = GC_2.y - tmpY; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 4] = GC_2.y + tmpY; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 1] = GC_2.y - tmpY; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 4] = GC_2.y + tmpY; // !!! !!! !!!
 
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 2] = GC_2.z - tmpZ; // !!! !!! !!!
-						((float *)params_OptiX.aabbBuffer)[((GaussInd + 1) * 6) + 5] = GC_2.z + tmpZ; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 2] = GC_2.z - tmpZ; // !!! !!! !!!
+						((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 5] = GC_2.z + tmpZ; // !!! !!! !!!
 					}
 				} else {
 					scale.x = ((scale.x < scene_extent * min_s_coefficients_clipping_threshold) ? scene_extent * min_s_coefficients_clipping_threshold : scale.x);
@@ -2706,9 +2740,9 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 
 					// *** *** *** *** ***
 
-					((float4 *)params_OptiX.GC_part_1_2)[GaussInd] = GC_1;
-					((float4 *)params_OptiX.m12)[GaussInd] = m1;
-					((float4 *)params_OptiX.v12)[GaussInd] = v1;
+					((float4 *)params_OptiX.GC_part_1_1)[tid] = GC_1;
+					((float4 *)params_OptiX.m11)[tid] = m1;
+					((float4 *)params_OptiX.v11)[tid] = v1;
 
 					// mX
 					GC_2.x -= dm.x;
@@ -2717,17 +2751,17 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 					// mZ
 					GC_2.z -= dm.z;
 
-					((float4 *)params_OptiX.GC_part_2_2)[GaussInd] = GC_2;
-					((float4 *)params_OptiX.m22)[GaussInd] = m2;
-					((float4 *)params_OptiX.v22)[GaussInd] = v2;
+					((float4 *)params_OptiX.GC_part_2_1)[tid] = GC_2;
+					((float4 *)params_OptiX.m21)[tid] = m2;
+					((float4 *)params_OptiX.v21)[tid] = v2;
 
-					((float4 *)params_OptiX.GC_part_3_2)[GaussInd] = GC_3;
-					((float4 *)params_OptiX.m32)[GaussInd] = m3;
-					((float4 *)params_OptiX.v32)[GaussInd] = v3;
+					((float4 *)params_OptiX.GC_part_3_1)[tid] = GC_3;
+					((float4 *)params_OptiX.m31)[tid] = m3;
+					((float4 *)params_OptiX.v31)[tid] = v3;
 
-					((float2 *)params_OptiX.GC_part_4_2)[GaussInd] = GC_4;
-					((float2 *)params_OptiX.m42)[GaussInd] = m4;
-					((float2 *)params_OptiX.v42)[GaussInd] = v4;
+					((float2 *)params_OptiX.GC_part_4_1)[tid] = GC_4;
+					((float2 *)params_OptiX.m41)[tid] = m4;
+					((float2 *)params_OptiX.v41)[tid] = v4;
 
 					lower_bound.x = GC_2.x - tmpX; // !!! !!! !!!
 					upper_bound.x = GC_2.x + tmpX; // !!! !!! !!!
@@ -2738,14 +2772,14 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 					lower_bound.z = GC_2.z - tmpZ; // !!! !!! !!!
 					upper_bound.z = GC_2.z + tmpZ; // !!! !!! !!!
 
-					((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 0] = GC_2.x - tmpX; // !!! !!! !!!
-					((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 3] = GC_2.x + tmpX; // !!! !!! !!!
+					((float *)params_OptiX.aabbBuffer)[(tid * 6) + 0] = GC_2.x - tmpX; // !!! !!! !!!
+					((float *)params_OptiX.aabbBuffer)[(tid * 6) + 3] = GC_2.x + tmpX; // !!! !!! !!!
 
-					((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 1] = GC_2.y - tmpY; // !!! !!! !!!
-					((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 4] = GC_2.y + tmpY; // !!! !!! !!!
+					((float *)params_OptiX.aabbBuffer)[(tid * 6) + 1] = GC_2.y - tmpY; // !!! !!! !!!
+					((float *)params_OptiX.aabbBuffer)[(tid * 6) + 4] = GC_2.y + tmpY; // !!! !!! !!!
 
-					((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 2] = GC_2.z - tmpZ; // !!! !!! !!!
-					((float *)params_OptiX.aabbBuffer)[(GaussInd * 6) + 5] = GC_2.z + tmpZ; // !!! !!! !!!
+					((float *)params_OptiX.aabbBuffer)[(tid * 6) + 2] = GC_2.z - tmpZ; // !!! !!! !!!
+					((float *)params_OptiX.aabbBuffer)[(tid * 6) + 5] = GC_2.z + tmpZ; // !!! !!! !!!
 				}
 			}
 		}
@@ -2921,6 +2955,36 @@ __global__ void ComputeGradientSSIM(
 
 // *************************************************************************************************
 
+#ifdef SSIM_REDUCE_MEMORY_OVERHEAD
+__global__ void UnpackImage(
+	unsigned *bitmap_ref,
+	REAL_G *bitmap_ref_R, REAL_G *bitmap_ref_G, REAL_G *bitmap_ref_B,
+	int width, int height, int kernel_size
+) {
+	int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
+	int x = tid % width;
+	int y = tid / width;
+	int arraySizeReal = (width + (kernel_size - 1)) * (height + (kernel_size - 1));
+	if (tid < arraySizeReal) {
+		if ((x >= 0) && (x < width) && (y >= 0) && (y < height)) {
+			unsigned color_ref = bitmap_ref[(y * width) + x];
+			unsigned char R = color_ref >> 16;
+			unsigned char G = (color_ref >> 8) & 255;
+			unsigned char B = color_ref & 255;
+			bitmap_ref_R[(y * (width + (kernel_size - 1))) + x] = R / ((REAL_G)255);
+			bitmap_ref_G[(y * (width + (kernel_size - 1))) + x] = G / ((REAL_G)255);
+			bitmap_ref_B[(y * (width + (kernel_size - 1))) + x] = B / ((REAL_G)255);
+		} else {
+			bitmap_ref_R[tid] = 0;
+			bitmap_ref_G[tid] = 0;
+			bitmap_ref_B[tid] = 0;
+		}
+	}
+}
+#endif
+
+// *************************************************************************************************
+
 // DEBUG GRADIENT
 extern bool DumpParameters(SOptiXRenderParams& params_OptiX);
 
@@ -2940,6 +3004,171 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 	int arraySizeComplex = (((params_OptiX.width + (kernel_size - 1)) >> 1) + 1) * (params_OptiX.width + (kernel_size - 1)); // !!! !!! !!!
 
 	cufftResult error_CUFFT;
+
+	// *********************************************************************************************
+
+#ifdef SSIM_REDUCE_MEMORY_OVERHEAD
+	// Bufor zosta³ uzupe³niony zerami przy okazji tworzenia kernela Gaussowskiego
+	/*for (int pose = 0; pose < params.NUMBER_OF_POSES; ++pose) {
+		// R channel
+		for (int i = 0; i < params_OptiX.width; ++i) {
+			for (int j = 0; j < params_OptiX.width; ++j) {
+				unsigned char R = params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.width)) + ((i * params_OptiX.width) + j)] >> 16;
+				buf[(i * (params_OptiX.width + (kernel_size - 1))) + j] = R / ((REAL_G)255.0);
+			}
+		}
+
+		error_CUDA = cudaMemcpy(params_OptiX.bitmap_ref_R + (pose * arraySizeReal), buf, sizeof(REAL_G) * arraySizeReal, cudaMemcpyHostToDevice);
+		if (error_CUDA != cudaSuccess) goto Error;
+
+		// *** *** *** *** ***
+
+		// G channel
+		for (int i = 0; i < params_OptiX.width; ++i) {
+			for (int j = 0; j < params_OptiX.width; ++j) {
+				unsigned char G = (params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.width)) + ((i * params_OptiX.width) + j)] >> 8) & 255;
+				buf[(i * (params_OptiX.width + (kernel_size - 1))) + j] = G / ((REAL_G)255.0);
+			}
+		}
+
+		error_CUDA = cudaMemcpy(params_OptiX.bitmap_ref_G + (pose * arraySizeReal), buf, sizeof(REAL_G) * arraySizeReal, cudaMemcpyHostToDevice);
+		if (error_CUDA != cudaSuccess) goto Error;
+
+		// *** *** *** *** ***
+
+		// B channel
+		for (int i = 0; i < params_OptiX.width; ++i) {
+			for (int j = 0; j < params_OptiX.width; ++j) {
+				unsigned char B = params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.width)) + ((i * params_OptiX.width) + j)] & 255;
+				buf[(i * (params_OptiX.width + (kernel_size - 1))) + j] = B / ((REAL_G)255.0);
+			}
+		}
+
+		error_CUDA = cudaMemcpy(params_OptiX.bitmap_ref_B + (pose * arraySizeReal), buf, sizeof(REAL_G) * arraySizeReal, cudaMemcpyHostToDevice);
+		if (error_CUDA != cudaSuccess) goto Error;
+	}*/
+
+	UnpackImage<<<(arraySizeReal + 255) >> 8, 256>>>(
+		params_OptiX.bitmap_ref + (params_OptiX.poseNum * params_OptiX.width * params_OptiX.width),
+		params_OptiX.bitmap_ref_R, params_OptiX.bitmap_ref_G, params_OptiX.bitmap_ref_B,
+		params_OptiX.width, params_OptiX.width, kernel_size
+	);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	// ************************************************************************************************
+
+	// Compute mu's for reference images
+	
+	// R channel
+	error_CUFFT = DFFT_G(params_OptiX.planr2c, params_OptiX.bitmap_ref_R + (0 * arraySizeReal), params_OptiX.F_2);
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	MultiplyPointwiseComplex<<<(arraySizeComplex + 255) >> 8, 256>>>(params_OptiX.F_2, params_OptiX.F_1, params_OptiX.F_2, arraySizeComplex);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUFFT = IDFFT_G(params_OptiX.planc2r, params_OptiX.F_2, params_OptiX.mu_bitmap_ref_R + (0 * arraySizeReal));
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	// *** *** *** *** ***
+
+	// G channel
+	error_CUFFT = DFFT_G(params_OptiX.planr2c, params_OptiX.bitmap_ref_G + (0 * arraySizeReal), params_OptiX.F_2);
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	MultiplyPointwiseComplex<<<(arraySizeComplex + 255) >> 8, 256>>>(params_OptiX.F_2, params_OptiX.F_1, params_OptiX.F_2, arraySizeComplex);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUFFT = IDFFT_G(params_OptiX.planc2r, params_OptiX.F_2, params_OptiX.mu_bitmap_ref_G + (0 * arraySizeReal));
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	// *** *** *** *** ***
+
+	// B channel
+	error_CUFFT = DFFT_G(params_OptiX.planr2c, params_OptiX.bitmap_ref_B + (0 * arraySizeReal), params_OptiX.F_2);
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	MultiplyPointwiseComplex<<<(arraySizeComplex + 255) >> 8, 256>>>(params_OptiX.F_2, params_OptiX.F_1, params_OptiX.F_2, arraySizeComplex);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUFFT = IDFFT_G(params_OptiX.planc2r, params_OptiX.F_2, params_OptiX.mu_bitmap_ref_B + (0 * arraySizeReal));
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	// ************************************************************************************************
+
+	// Compute mu's for reference images square
+	
+	// R channel
+	// mu_bitmap_out_bitmap_ref_R = bitmap_ref_R * bitmap_ref_R
+	MultiplyPointwiseReal<<<(arraySizeReal + 255) >> 8, 256>>>(
+		params_OptiX.bitmap_ref_R + (0 * arraySizeReal),
+		params_OptiX.bitmap_ref_R + (0 * arraySizeReal),
+		params_OptiX.mu_bitmap_out_bitmap_ref_R,
+		arraySizeReal
+		);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUFFT = DFFT_G(params_OptiX.planr2c, params_OptiX.mu_bitmap_out_bitmap_ref_R, params_OptiX.F_2);
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	MultiplyPointwiseComplex<<<(arraySizeComplex + 255) >> 8, 256>>>(params_OptiX.F_2, params_OptiX.F_1, params_OptiX.F_2, arraySizeComplex);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUFFT = IDFFT_G(params_OptiX.planc2r, params_OptiX.F_2, params_OptiX.mu_bitmap_ref_R_square + (0 * arraySizeReal));
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	// *** *** *** *** ***
+
+	// G channel
+	// mu_bitmap_out_bitmap_ref_R = bitmap_ref_G * bitmap_ref_G
+	MultiplyPointwiseReal<<<(arraySizeReal + 255) >> 8, 256>>>(
+		params_OptiX.bitmap_ref_G + (0 * arraySizeReal),
+		params_OptiX.bitmap_ref_G + (0 * arraySizeReal),
+		params_OptiX.mu_bitmap_out_bitmap_ref_R,
+		arraySizeReal
+		);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUFFT = DFFT_G(params_OptiX.planr2c, params_OptiX.mu_bitmap_out_bitmap_ref_R, params_OptiX.F_2);
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	MultiplyPointwiseComplex<<<(arraySizeComplex + 255) >> 8, 256>>>(params_OptiX.F_2, params_OptiX.F_1, params_OptiX.F_2, arraySizeComplex);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUFFT = IDFFT_G(params_OptiX.planc2r, params_OptiX.F_2, params_OptiX.mu_bitmap_ref_G_square + (0 * arraySizeReal));
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	// *** *** *** *** ***
+
+	// B channel
+	// mu_bitmap_out_bitmap_ref_R = bitmap_ref_B * bitmap_ref_B
+	MultiplyPointwiseReal<<<(arraySizeReal + 255) >> 8, 256>>>(
+		params_OptiX.bitmap_ref_B + (0 * arraySizeReal),
+		params_OptiX.bitmap_ref_B + (0 * arraySizeReal),
+		params_OptiX.mu_bitmap_out_bitmap_ref_R,
+		arraySizeReal
+		);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUFFT = DFFT_G(params_OptiX.planr2c, params_OptiX.mu_bitmap_out_bitmap_ref_R, params_OptiX.F_2);
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+	MultiplyPointwiseComplex<<<(arraySizeComplex + 255) >> 8, 256>>>(params_OptiX.F_2, params_OptiX.F_1, params_OptiX.F_2, arraySizeComplex);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUFFT = IDFFT_G(params_OptiX.planc2r, params_OptiX.F_2, params_OptiX.mu_bitmap_ref_B_square + (0 * arraySizeReal));
+	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
+
+#endif
 
 	// *********************************************************************************************
 
@@ -3065,12 +3294,21 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 
 	// R channel
 	// mu_bitmap_out_bitmap_ref_R = bitmap_out_R * bitmap_ref_R
+#ifndef SSIM_REDUCE_MEMORY_OVERHEAD
 	MultiplyPointwiseReal<<<(arraySizeReal + 255) >> 8, 256>>>(
 		params_OptiX.bitmap_out_R,
 		params_OptiX.bitmap_ref_R + (params_OptiX.poseNum * arraySizeReal), // !!! !!! !!!
 		params_OptiX.mu_bitmap_out_bitmap_ref_R,
 		arraySizeReal
 		);
+#else
+	MultiplyPointwiseReal<<<(arraySizeReal + 255) >> 8, 256>>>(
+		params_OptiX.bitmap_out_R,
+		params_OptiX.bitmap_ref_R + (0 * arraySizeReal), // !!! !!! !!!
+		params_OptiX.mu_bitmap_out_bitmap_ref_R,
+		arraySizeReal
+		);
+#endif
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -3088,12 +3326,21 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 
 	// G channel
 	// mu_bitmap_out_bitmap_ref_G = bitmap_out_G * bitmap_ref_G
+#ifndef SSIM_REDUCE_MEMORY_OVERHEAD
 	MultiplyPointwiseReal<<<(arraySizeReal + 255) >> 8, 256>>>(
 		params_OptiX.bitmap_out_G,
 		params_OptiX.bitmap_ref_G + (params_OptiX.poseNum * arraySizeReal), // !!! !!! !!!
 		params_OptiX.mu_bitmap_out_bitmap_ref_G,
 		arraySizeReal
 		);
+#else
+	MultiplyPointwiseReal<<<(arraySizeReal + 255) >> 8, 256>>>(
+		params_OptiX.bitmap_out_G,
+		params_OptiX.bitmap_ref_G + (0 * arraySizeReal), // !!! !!! !!!
+		params_OptiX.mu_bitmap_out_bitmap_ref_G,
+		arraySizeReal
+		);
+#endif
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -3111,12 +3358,21 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 
 	// B channel
 	// mu_bitmap_out_bitmap_ref_B = bitmap_out_B * bitmap_ref_B
+#ifndef SSIM_REDUCE_MEMORY_OVERHEAD
 	MultiplyPointwiseReal<<<(arraySizeReal + 255) >> 8, 256>>>(
 		params_OptiX.bitmap_out_B,
 		params_OptiX.bitmap_ref_B + (params_OptiX.poseNum * arraySizeReal), // !!! !!! !!!
 		params_OptiX.mu_bitmap_out_bitmap_ref_B,
 		arraySizeReal
 		);
+#else
+	MultiplyPointwiseReal<<<(arraySizeReal + 255) >> 8, 256>>>(
+		params_OptiX.bitmap_out_B,
+		params_OptiX.bitmap_ref_B + (0 * arraySizeReal), // !!! !!! !!!
+		params_OptiX.mu_bitmap_out_bitmap_ref_B,
+		arraySizeReal
+		);
+#endif
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -3132,6 +3388,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 
 	// *********************************************************************************************
 
+#ifndef SSIM_REDUCE_MEMORY_OVERHEAD
 	ComputeArraysForGradientComputation<<<(arraySizeReal + 255) >> 8, 256>>>(
 		params_OptiX.mu_bitmap_out_R, params_OptiX.mu_bitmap_ref_R + (params_OptiX.poseNum * arraySizeReal),
 		params_OptiX.mu_bitmap_out_bitmap_ref_R,
@@ -3153,6 +3410,29 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 
 		params_OptiX.width + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), kernel_radius
 	);
+#else
+	ComputeArraysForGradientComputation<<<(arraySizeReal + 255) >> 8, 256>>>(
+		params_OptiX.mu_bitmap_out_R, params_OptiX.mu_bitmap_ref_R + (0 * arraySizeReal),
+		params_OptiX.mu_bitmap_out_bitmap_ref_R,
+		params_OptiX.mu_bitmap_out_R_square, params_OptiX.mu_bitmap_ref_R_square + (0 * arraySizeReal),
+
+		params_OptiX.mu_bitmap_out_G, params_OptiX.mu_bitmap_ref_G + (0 * arraySizeReal),
+		params_OptiX.mu_bitmap_out_bitmap_ref_G,
+		params_OptiX.mu_bitmap_out_G_square, params_OptiX.mu_bitmap_ref_G_square + (0 * arraySizeReal),
+
+		params_OptiX.mu_bitmap_out_B, params_OptiX.mu_bitmap_ref_B + (0 * arraySizeReal),
+		params_OptiX.mu_bitmap_out_bitmap_ref_B,
+		params_OptiX.mu_bitmap_out_B_square, params_OptiX.mu_bitmap_ref_B_square + (0 * arraySizeReal),
+
+		// !!! !!! !!!
+		params_OptiX.mu_bitmap_out_R, params_OptiX.mu_bitmap_out_bitmap_ref_R, params_OptiX.mu_bitmap_out_R_square,
+		params_OptiX.mu_bitmap_out_G, params_OptiX.mu_bitmap_out_bitmap_ref_G, params_OptiX.mu_bitmap_out_G_square,
+		params_OptiX.mu_bitmap_out_B, params_OptiX.mu_bitmap_out_bitmap_ref_B, params_OptiX.mu_bitmap_out_B_square,
+		// !!! !!! !!!
+
+		params_OptiX.width + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), kernel_radius
+	);
+#endif
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -3279,6 +3559,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 
 	// *********************************************************************************************
 
+#ifndef SSIM_REDUCE_MEMORY_OVERHEAD
 	ComputeGradientSSIM<<<(arraySizeReal + 255) >> 8, 256>>>(
 		params_OptiX.mu_bitmap_out_R,
 		params_OptiX.mu_bitmap_out_bitmap_ref_R, params_OptiX.bitmap_ref_R + (params_OptiX.poseNum * arraySizeReal),
@@ -3298,6 +3579,27 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 
 		params_OptiX.width + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), kernel_size
 	);
+#else
+	ComputeGradientSSIM<<<(arraySizeReal + 255) >> 8, 256>>>(
+		params_OptiX.mu_bitmap_out_R,
+		params_OptiX.mu_bitmap_out_bitmap_ref_R, params_OptiX.bitmap_ref_R + (0 * arraySizeReal),
+		params_OptiX.mu_bitmap_out_R_square, params_OptiX.bitmap_out_R,
+
+		params_OptiX.mu_bitmap_out_G,
+		params_OptiX.mu_bitmap_out_bitmap_ref_G, params_OptiX.bitmap_ref_G + (0 * arraySizeReal),
+		params_OptiX.mu_bitmap_out_G_square, params_OptiX.bitmap_out_G,
+
+		params_OptiX.mu_bitmap_out_B,
+		params_OptiX.mu_bitmap_out_bitmap_ref_B, params_OptiX.bitmap_ref_B + (0 * arraySizeReal),
+		params_OptiX.mu_bitmap_out_B_square, params_OptiX.bitmap_out_B,
+
+		// !!! !!! !!!
+		params_OptiX.mu_bitmap_out_R, params_OptiX.mu_bitmap_out_G, params_OptiX.mu_bitmap_out_B,
+		// !!! !!! !!!
+
+		params_OptiX.width + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), kernel_size
+	);
+#endif
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -3403,6 +3705,10 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 	error_CUDA = cudaMemcpyToSymbol(auxiliary_values, &initial_values, sizeof(SAuxiliaryValues) * 1);
 	if (error_CUDA != cudaSuccess) goto Error;
 
+	// !!! !!! !!! EXPERIMENTAL !!! !!! !!!
+	cuMemsetD32(((CUdeviceptr)needsToBeRemoved_host), 1, params_OptiX.numberOfGaussians * 2);
+	// !!! !!! !!! EXPERIMENTAL !!! !!! !!!
+
 	dev_UpdateGradientOptiX<<<(params_OptiX.numberOfGaussians + 63) >> 6, 64>>>(params_OptiX);
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
@@ -3428,177 +3734,301 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		((params_OptiX.epoch % densification_frequency_host) == 0) &&
 		(numberOfGaussiansOld <= max_Gaussians_per_model_host) // !!! !!! !!!
 	) {
-		error_CUDA = cudaMemcpy(&params_OptiX.numberOfGaussians, params_OptiX.counter1, sizeof(unsigned) * 1, cudaMemcpyDeviceToHost);
+		// !!! !!! !!! EXPERIMENTAL !!! !!! !!!
+		int numberOfNewGaussians;
+
+		error_CUDA = cudaMemcpy(&numberOfNewGaussians, params_OptiX.counter1, sizeof(unsigned) * 1, cudaMemcpyDeviceToHost);
 		if (error_CUDA != cudaSuccess) goto Error;
+
+		params_OptiX.numberOfGaussians += numberOfNewGaussians; // !!! !!! !!!
+
+		thrust::exclusive_scan(
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host)
+		);
+
+		int numberOfGaussiansNew = thrust::reduce(
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host) + params_OptiX.numberOfGaussians
+		);
+
+		// ************************************************************************************************
+
+		bool needsToReallocMemory = false;
+		if (
+			((numberOfGaussiansNew * 2) > params_OptiX.maxNumberOfGaussians) && 
+			(numberOfGaussiansNew <= max_Gaussians_per_model_host)
+		) {
+			needsToReallocMemory = true;
+			params_OptiX.maxNumberOfGaussians = numberOfGaussiansNew * 2.25f; // !!! !!! !!!
+
+			error_CUDA = cudaFree(params_OptiX.dL_dparams_1);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaFree(params_OptiX.dL_dparams_2);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaFree(params_OptiX.dL_dparams_3);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaFree(params_OptiX.dL_dparams_4);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_1, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_2, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_3, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_4, sizeof(REAL2_G) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+
+		// AABB
+		thrust::scatter_if(
+			thrust::device_pointer_cast((AABB *)params_OptiX.aabbBuffer),
+			thrust::device_pointer_cast((AABB *)params_OptiX.aabbBuffer) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((AABB *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.aabbBuffer);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.aabbBuffer, sizeof(float) * 6 * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.aabbBuffer, scatterBuffer, sizeof(float) * 6 * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+		
+		// GC
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.GC_part_1_1),
+			thrust::device_pointer_cast(params_OptiX.GC_part_1_1) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float4 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.GC_part_1_1);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.GC_part_1_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.GC_part_1_1, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.GC_part_2_1),
+			thrust::device_pointer_cast(params_OptiX.GC_part_2_1) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float4 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.GC_part_2_1);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.GC_part_2_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.GC_part_2_1, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.GC_part_3_1),
+			thrust::device_pointer_cast(params_OptiX.GC_part_3_1) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float4 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.GC_part_3_1);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.GC_part_3_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.GC_part_3_1, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.GC_part_4_1),
+			thrust::device_pointer_cast(params_OptiX.GC_part_4_1) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float2 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.GC_part_4_1);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.GC_part_4_1, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.GC_part_4_1, scatterBuffer, sizeof(float2) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		// m
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.m11),
+			thrust::device_pointer_cast(params_OptiX.m11) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float4 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.m11);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.m11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.m11, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.m21),
+			thrust::device_pointer_cast(params_OptiX.m21) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float4 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.m21);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.m21, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.m21, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.m31),
+			thrust::device_pointer_cast(params_OptiX.m31) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float4 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.m31);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.m31, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.m31, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.m41),
+			thrust::device_pointer_cast(params_OptiX.m41) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float2 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.m41);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.m41, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.m41, scatterBuffer, sizeof(float2) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		// v
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.v11),
+			thrust::device_pointer_cast(params_OptiX.v11) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float4 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.v11);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.v11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.v11, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.v21),
+			thrust::device_pointer_cast(params_OptiX.v21) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float4 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.v21);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.v21, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.v21, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.v31),
+			thrust::device_pointer_cast(params_OptiX.v31) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float4 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.v31);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.v31, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.v31, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		thrust::scatter_if(
+			thrust::device_pointer_cast(params_OptiX.v41),
+			thrust::device_pointer_cast(params_OptiX.v41) + params_OptiX.numberOfGaussians,
+			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
+			thrust::device_pointer_cast(needsToBeRemoved_host),
+			thrust::device_pointer_cast((float2 *)scatterBuffer)
+		);
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(params_OptiX.v41);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.v41, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+		cudaMemcpy(params_OptiX.v41, scatterBuffer, sizeof(float2) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+
+		if (needsToReallocMemory) {
+			error_CUDA = cudaFree(needsToBeRemoved_host);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaFree(Gaussians_indices_after_removal_host);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaFree(scatterBuffer);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&needsToBeRemoved_host, sizeof(int) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMemcpyToSymbol(needsToBeRemoved, &needsToBeRemoved_host, sizeof(int *));
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&Gaussians_indices_after_removal_host, sizeof(int) * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&scatterBuffer, sizeof(float) * 6 * params_OptiX.maxNumberOfGaussians);
+			if (error_CUDA != cudaSuccess) goto Error;
+		}
+
+		params_OptiX.numberOfGaussians = numberOfGaussiansNew;
+		// !!! !!! !!! EXPERIMENTAL !!! !!! !!!
 	}
 
 	error_CUDA = cudaMemcpy(&params_OptiX.loss_host, params_OptiX.loss_device, sizeof(double) * 1, cudaMemcpyDeviceToHost);
 	if (error_CUDA != cudaSuccess) goto Error;
-
-	if (
-		(params_OptiX.epoch >= densification_start_epoch_host) &&
-		(params_OptiX.epoch <= densification_end_epoch_host) &&
-		((params_OptiX.epoch % densification_frequency_host) == 0) &&
-		(numberOfGaussiansOld <= max_Gaussians_per_model_host) // !!! !!! !!!
-	) {
-		int tmp1;
-
-		tmp1 = params_OptiX.maxNumberOfGaussians1;
-		params_OptiX.maxNumberOfGaussians1 = params_OptiX.maxNumberOfGaussians2;
-		params_OptiX.maxNumberOfGaussians2 = tmp1;
-
-		void *tmp2;
-
-		tmp2 = params_OptiX.GC_part_1_1; params_OptiX.GC_part_1_1 = params_OptiX.GC_part_1_2; params_OptiX.GC_part_1_2 = (float4 *)tmp2;
-		tmp2 = params_OptiX.GC_part_2_1; params_OptiX.GC_part_2_1 = params_OptiX.GC_part_2_2; params_OptiX.GC_part_2_2 = (float4 *)tmp2;
-		tmp2 = params_OptiX.GC_part_3_1; params_OptiX.GC_part_3_1 = params_OptiX.GC_part_3_2; params_OptiX.GC_part_3_2 = (float4 *)tmp2;
-		tmp2 = params_OptiX.GC_part_4_1; params_OptiX.GC_part_4_1 = params_OptiX.GC_part_4_2; params_OptiX.GC_part_4_2 = (float2 *)tmp2;
-
-		tmp2 = params_OptiX.m11; params_OptiX.m11 = params_OptiX.m12; params_OptiX.m12 = (float4 *)tmp2;
-		tmp2 = params_OptiX.m21; params_OptiX.m21 = params_OptiX.m22; params_OptiX.m22 = (float4 *)tmp2;
-		tmp2 = params_OptiX.m31; params_OptiX.m31 = params_OptiX.m32; params_OptiX.m32 = (float4 *)tmp2;
-		tmp2 = params_OptiX.m41; params_OptiX.m41 = params_OptiX.m42; params_OptiX.m42 = (float2 *)tmp2;
-
-		tmp2 = params_OptiX.v11; params_OptiX.v11 = params_OptiX.v12; params_OptiX.v12 = (float4 *)tmp2;
-		tmp2 = params_OptiX.v21; params_OptiX.v21 = params_OptiX.v22; params_OptiX.v22 = (float4 *)tmp2;
-		tmp2 = params_OptiX.v31; params_OptiX.v31 = params_OptiX.v32; params_OptiX.v32 = (float4 *)tmp2;
-		tmp2 = params_OptiX.v41; params_OptiX.v41 = params_OptiX.v42; params_OptiX.v42 = (float2 *)tmp2;
-
-		// If after the last densification the number of Gaussians exceeds the threshold, there will be no more densification, so we don't have
-		// to reserve the memory for the new Gaussians
-		if (
-			((params_OptiX.numberOfGaussians * 2) > params_OptiX.maxNumberOfGaussians2) &&
-			(params_OptiX.numberOfGaussians <= max_Gaussians_per_model_host) // !!! !!! !!!
-		) {
-			params_OptiX.maxNumberOfGaussians2 = params_OptiX.numberOfGaussians * 3;
-
-			// *************************************************************************************
-
-			if (params_OptiX.maxNumberOfGaussians2 > params_OptiX.maxNumberOfGaussians1) {
-				// !!! !!! !!!
-				// Nale¿y przenieœæ zawrtoœæ aktualnej tablicy bounding box'ów do nowej tablicy
-				void *tmp;
-			
-				error_CUDA = cudaMalloc(&tmp, sizeof(float) * 6 * params_OptiX.maxNumberOfGaussians2);
-				if (error_CUDA != cudaSuccess) goto Error;
-
-				error_CUDA = cudaMemcpy(tmp, params_OptiX.aabbBuffer, sizeof(float) * 6 * params_OptiX.numberOfGaussians, cudaMemcpyDeviceToDevice);
-				if (error_CUDA != cudaSuccess) goto Error;
-
-				error_CUDA = cudaFree(params_OptiX.aabbBuffer);
-				if (error_CUDA != cudaSuccess) goto Error;
-
-				params_OptiX.aabbBuffer = tmp;
-				// !!! !!! !!!
-			}
-
-			// *************************************************************************************
-
-			error_CUDA = cudaFree(params_OptiX.GC_part_1_2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaFree(params_OptiX.GC_part_2_2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaFree(params_OptiX.GC_part_3_2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaFree(params_OptiX.GC_part_4_2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.GC_part_1_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.GC_part_2_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.GC_part_3_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.GC_part_4_2, sizeof(float2) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			// ************************************************************************************************
-
-			if (params_OptiX.maxNumberOfGaussians2 > params_OptiX.maxNumberOfGaussians1) {
-				error_CUDA = cudaFree(params_OptiX.dL_dparams_1);
-				if (error_CUDA != cudaSuccess) goto Error;
-
-				error_CUDA = cudaFree(params_OptiX.dL_dparams_2);
-				if (error_CUDA != cudaSuccess) goto Error;
-
-				error_CUDA = cudaFree(params_OptiX.dL_dparams_3);
-				if (error_CUDA != cudaSuccess) goto Error;
-
-				error_CUDA = cudaFree(params_OptiX.dL_dparams_4);
-				if (error_CUDA != cudaSuccess) goto Error;
-
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_1, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians2);
-				if (error_CUDA != cudaSuccess) goto Error;
-
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_2, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians2);
-				if (error_CUDA != cudaSuccess) goto Error;
-
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_3, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians2);
-				if (error_CUDA != cudaSuccess) goto Error;
-
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_4, sizeof(REAL2_G) * params_OptiX.maxNumberOfGaussians2);
-				if (error_CUDA != cudaSuccess) goto Error;
-			}
-
-			// ************************************************************************************************
-
-			error_CUDA = cudaFree(params_OptiX.m12);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaFree(params_OptiX.m22);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaFree(params_OptiX.m32);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaFree(params_OptiX.m42);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.m12, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.m22, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.m32, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.m42, sizeof(float2) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			// ************************************************************************************************
-
-			error_CUDA = cudaFree(params_OptiX.v12);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaFree(params_OptiX.v22);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaFree(params_OptiX.v32);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaFree(params_OptiX.v42);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.v12, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.v22, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.v32, sizeof(float4) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.v42, sizeof(float2) * params_OptiX.maxNumberOfGaussians2);
-			if (error_CUDA != cudaSuccess) goto Error;
-		}
-	}
 
 	// ************************************************************************************************
 
@@ -3783,4 +4213,919 @@ void GetSceneBoundsOptiX(float& lB, float& rB, float& uB, float& dB, float& bB, 
 	dB = SortableUint2Float(values.scene_upper_bound.y);
 	bB = SortableUint2Float(values.scene_lower_bound.z);
 	fB = SortableUint2Float(values.scene_upper_bound.z);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct STriangleComponent {
+	float3 N1, N2, N3;
+};
+
+struct SOptiXRenderParamsMesh {
+	STriangleComponent *TC;
+	OptixTraversableHandle asHandle;
+};
+
+struct LaunchParamsMesh {
+	unsigned *bitmap;
+	unsigned width;
+
+	float3 O;
+	float3 R, D, F;
+	float FOV;
+
+	OptixTraversableHandle traversable;
+
+	float4 *GC_part_1;
+	float4 *GC_part_2;
+	float4 *GC_part_3;
+	float2 *GC_part_4;
+
+	int *Gaussians_indices;
+	REAL_G *bitmap_out_R, *bitmap_out_G, *bitmap_out_B;
+
+	float ray_termination_T_threshold;
+	float last_significant_Gauss_alpha_gradient_precision;
+	float chi_square_squared_radius;
+	int max_Gaussians_per_ray;
+
+	STriangleComponent *TC;
+	OptixTraversableHandle traversable_tri;
+};
+
+//**************************************************************************************************
+//* InitializeOptiXRendererMesh                                                                    *
+//**************************************************************************************************
+
+bool InitializeOptiXRendererMesh(
+	SRenderParams &params,
+	SOptiXRenderParams &params_OptiX,
+	C3DScene *scene,
+	SOptiXRenderParamsMesh &params_OptiXMesh,
+	bool loadFromFile = false,
+	int epoch = 0
+) {
+	cudaError_t error_CUDA;
+	OptixResult error_OptiX;
+	CUresult error_CUDA_Driver_API;
+
+	error_CUDA = cudaFree(0);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_OptiX = optixInit();
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	CUcontext cudaContext;
+	error_CUDA_Driver_API = cuCtxGetCurrent(&cudaContext);
+	if(error_CUDA_Driver_API != CUDA_SUCCESS) goto Error;
+
+	error_OptiX = optixDeviceContextCreate(cudaContext, 0, &params_OptiX.optixContext);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	// *********************************************************************************************
+
+	FILE *f = fopen("C:/Users/pc/source/repos/GaussianRenderingCUDA/GaussianRenderingCUDA/x64/Release/shadersMesh.cu.ptx", "rb");
+	fseek(f, 0, SEEK_END);
+	int ptxCodeSize = ftell(f);
+	fclose(f);
+
+	char *ptxCode = (char *)malloc(sizeof(char) * (ptxCodeSize + 1));
+	char *buffer = (char *)malloc(sizeof(char) * (ptxCodeSize + 1));
+	ptxCode[0] = 0; // !!! !!! !!!
+
+	f = fopen("C:/Users/pc/source/repos/GaussianRenderingCUDA/GaussianRenderingCUDA/x64/Release/shadersMesh.cu.ptx", "rt");
+	while (!feof(f)) {
+		fgets(buffer, ptxCodeSize + 1, f);
+		ptxCode = strcat(ptxCode, buffer);
+	}
+	fclose(f);
+
+	free(buffer);
+
+	// *********************************************************************************************
+
+	OptixModuleCompileOptions moduleCompileOptions = {};
+	OptixPipelineCompileOptions pipelineCompileOptions = {};
+
+	moduleCompileOptions.maxRegisterCount = 50;
+	moduleCompileOptions.optLevel = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
+	moduleCompileOptions.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+
+	pipelineCompileOptions.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
+	pipelineCompileOptions.usesMotionBlur = false;
+#ifndef RENDERER_OPTIX_USE_DOUBLE_PRECISION
+	pipelineCompileOptions.numPayloadValues = 7; // (12) !!! !!! !!!
+#else
+	pipelineCompileOptions.numPayloadValues = 7; // (19) !!! !!! !!!
+#endif
+	pipelineCompileOptions.numAttributeValues = 2;
+	pipelineCompileOptions.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
+	pipelineCompileOptions.pipelineLaunchParamsVariableName = "optixLaunchParams";
+
+	OptixModule module;
+	error_OptiX = optixModuleCreate(
+		params_OptiX.optixContext,
+		&moduleCompileOptions,
+		&pipelineCompileOptions,
+		ptxCode,
+		strlen(ptxCode),
+		NULL, NULL,
+		&module
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	free(ptxCode);
+
+	// *********************************************************************************************
+
+	OptixProgramGroupOptions pgOptions = {};
+
+	// *********************************************************************************************
+
+	OptixProgramGroupDesc pgDesc_raygen = {};
+	pgDesc_raygen.kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+	pgDesc_raygen.raygen.module = module;           
+	pgDesc_raygen.raygen.entryFunctionName = "__raygen__renderFrame";
+
+	OptixProgramGroup raygenPG;
+	error_OptiX = optixProgramGroupCreate(
+		params_OptiX.optixContext,
+		&pgDesc_raygen,
+		1,
+		&pgOptions,
+		NULL, NULL,
+		&raygenPG
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	// *********************************************************************************************
+
+	OptixProgramGroupDesc pgDesc_miss = {};
+	pgDesc_miss.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
+	pgDesc_miss.miss.module = module;
+	pgDesc_miss.miss.entryFunctionName = "__miss__radiance";
+
+	OptixProgramGroup missPG;
+	error_OptiX = optixProgramGroupCreate(
+		params_OptiX.optixContext,
+		&pgDesc_miss,
+		1, 
+		&pgOptions,
+		NULL, NULL,
+		&missPG
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	// *********************************************************************************************
+
+	OptixProgramGroupDesc pgDesc_hitgroup = {};
+	pgDesc_hitgroup.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+	pgDesc_hitgroup.hitgroup.moduleCH            = module;           
+	pgDesc_hitgroup.hitgroup.entryFunctionNameCH = "__closesthit__radiance";
+	pgDesc_hitgroup.hitgroup.moduleIS            = module;
+	pgDesc_hitgroup.hitgroup.entryFunctionNameIS = "__intersection__is";
+
+	OptixProgramGroupDesc pgDesc_hitgroup_Tri = {};
+	pgDesc_hitgroup_Tri.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+	pgDesc_hitgroup_Tri.hitgroup.moduleCH            = module;           
+	pgDesc_hitgroup_Tri.hitgroup.entryFunctionNameCH = "__closesthit__radiance2";
+
+	OptixProgramGroupDesc pgDesc_hitgroups[2] = {pgDesc_hitgroup, pgDesc_hitgroup_Tri};
+	OptixProgramGroupOptions pgOptions_hitgroups[2] = {pgOptions, pgOptions};
+	OptixProgramGroup hitgroupPG[2];
+
+	error_OptiX = optixProgramGroupCreate(
+		params_OptiX.optixContext,
+		pgDesc_hitgroups,
+		2,
+		pgOptions_hitgroups,
+		NULL, NULL,
+		hitgroupPG
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	// *********************************************************************************************
+
+	OptixPipelineLinkOptions pipelineLinkOptions = {};
+	pipelineLinkOptions.maxTraceDepth = 31;
+
+	OptixProgramGroup program_groups[] = { raygenPG, missPG, hitgroupPG[0], hitgroupPG[1] };
+
+	error_OptiX = optixPipelineCreate(
+		params_OptiX.optixContext,
+		&pipelineCompileOptions,
+		&pipelineLinkOptions,
+		program_groups,
+		4,
+		NULL, NULL,
+		&params_OptiX.pipeline
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	error_OptiX = optixPipelineSetStackSize(
+		params_OptiX.pipeline, 
+		2*1024,
+		2*1024,
+		2*1024,
+		1
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	// *********************************************************************************************
+
+	params_OptiX.sbt = new OptixShaderBindingTable();
+
+	// *********************************************************************************************
+
+	SbtRecord rec_raygen;
+	error_OptiX = optixSbtRecordPackHeader(raygenPG, &rec_raygen);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.raygenRecordsBuffer, sizeof(SbtRecord) * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpy(params_OptiX.raygenRecordsBuffer, &rec_raygen, sizeof(SbtRecord) * 1, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	params_OptiX.sbt->raygenRecord = (CUdeviceptr)params_OptiX.raygenRecordsBuffer;
+
+	// *********************************************************************************************
+
+	SbtRecord rec_miss;
+	error_OptiX = optixSbtRecordPackHeader(missPG, &rec_miss);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.missRecordsBuffer, sizeof(SbtRecord) * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpy(params_OptiX.missRecordsBuffer, &rec_miss, sizeof(SbtRecord) * 1, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	params_OptiX.sbt->missRecordBase = (CUdeviceptr)params_OptiX.missRecordsBuffer;
+	params_OptiX.sbt->missRecordStrideInBytes = sizeof(SbtRecord);
+	params_OptiX.sbt->missRecordCount = 1;
+
+	// *********************************************************************************************
+
+	SbtRecord rec_hitgroup;
+	SbtRecord rec_hitgroupMesh;
+
+	error_OptiX = optixSbtRecordPackHeader(hitgroupPG[0], &rec_hitgroup);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	error_OptiX = optixSbtRecordPackHeader(hitgroupPG[1], &rec_hitgroupMesh);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.hitgroupRecordsBuffer, sizeof(SbtRecord) * 2);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	SbtRecord rec_hitgroups[2] = { rec_hitgroup, rec_hitgroupMesh };
+
+	error_CUDA = cudaMemcpy(params_OptiX.hitgroupRecordsBuffer, &rec_hitgroups, sizeof(SbtRecord) * 2, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	params_OptiX.sbt->hitgroupRecordBase          = (CUdeviceptr)params_OptiX.hitgroupRecordsBuffer;
+	params_OptiX.sbt->hitgroupRecordStrideInBytes = sizeof(SbtRecord);
+	params_OptiX.sbt->hitgroupRecordCount         = 2;
+
+	// *********************************************************************************************
+
+	if (!loadFromFile) {
+		params_OptiX.numberOfGaussians = params.numberOfGaussians; // !!! !!! !!!
+	} else {
+		FILE *f;
+
+		char fName[256];
+		sprintf_s(fName, "dump/save/%d.GC1", epoch);
+
+		fopen_s(&f, fName, "rb");
+		fseek(f, 0, SEEK_END);
+		params_OptiX.numberOfGaussians = ftell(f) / sizeof(float4); // !!! !!! !!!
+		fclose(f);
+	}
+
+	// *********************************************************************************************
+
+	float4 *GC_part_1 = (float4 *)malloc(sizeof(float4) * params_OptiX.numberOfGaussians);
+	float4 *GC_part_2 = (float4 *)malloc(sizeof(float4) * params_OptiX.numberOfGaussians);
+	float4 *GC_part_3 = (float4 *)malloc(sizeof(float4) * params_OptiX.numberOfGaussians);
+	float2 *GC_part_4 = (float2 *)malloc(sizeof(float2) * params_OptiX.numberOfGaussians);
+
+	if (!loadFromFile) {
+		for (int i = 0; i < params_OptiX.numberOfGaussians; ++i) {
+			GC_part_1[i].x = params.GC[i].R;
+			GC_part_1[i].y = params.GC[i].G;
+			GC_part_1[i].z = params.GC[i].B;
+			GC_part_1[i].w = params.GC[i].alpha;
+
+			GC_part_2[i].x = params.GC[i].mX;
+			GC_part_2[i].y = params.GC[i].mY;
+			GC_part_2[i].z = params.GC[i].mZ;
+			GC_part_2[i].w = params.GC[i].sX;
+
+			GC_part_3[i].x = params.GC[i].sY;
+			GC_part_3[i].y = params.GC[i].sZ;
+			GC_part_3[i].z = params.GC[i].qr;
+			GC_part_3[i].w = params.GC[i].qi;
+
+			GC_part_4[i].x = params.GC[i].qj;
+			GC_part_4[i].y = params.GC[i].qk;
+		}
+	} else {
+		LoadFromFile("dump/save", epoch, "GC1", GC_part_1, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile("dump/save", epoch, "GC2", GC_part_2, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile("dump/save", epoch, "GC3", GC_part_3, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile("dump/save", epoch, "GC4", GC_part_4, sizeof(float2) * params_OptiX.numberOfGaussians);
+	}
+
+	// *********************************************************************************************
+
+	float *aabbs = (float *)malloc(sizeof(float) * 6 * params_OptiX.numberOfGaussians);
+
+	SAuxiliaryValues auxiliary_values_local;
+	auxiliary_values_local.scene_lower_bound = initial_values.scene_lower_bound;
+	auxiliary_values_local.scene_upper_bound = initial_values.scene_upper_bound;
+
+	float scene_extent_local;
+
+	for (int i = 0; i < params_OptiX.numberOfGaussians; ++i) {
+		float aa = GC_part_3[i].z * GC_part_3[i].z;
+		float bb = GC_part_3[i].w * GC_part_3[i].w;
+		float cc = GC_part_4[i].x * GC_part_4[i].x;
+		float dd = GC_part_4[i].y * GC_part_4[i].y;
+		float s = 2.0f / (aa + bb + cc + dd);
+
+		float bs = GC_part_3[i].w * s;  float cs = GC_part_4[i].x * s;  float ds = GC_part_4[i].y * s;
+		float ab = GC_part_3[i].z * bs; float ac = GC_part_3[i].z * cs; float ad = GC_part_3[i].z * ds;
+		bb = bb * s;                    float bc = GC_part_3[i].w * cs; float bd = GC_part_3[i].w * ds;
+		cc = cc * s;                    float cd = GC_part_4[i].x * ds;       dd = dd * s;
+
+		float Q11 = 1.0f - cc - dd;
+		float Q12 = bc - ad;
+		float Q13 = bd + ac;
+
+		float Q21 = bc + ad;
+		float Q22 = 1.0f - bb - dd;
+		float Q23 = cd - ab;
+
+		float Q31 = bd - ac;
+		float Q32 = cd + ab;
+		float Q33 = 1.0f - bb - cc;
+
+		float sX = 1.0f / (1.0f + expf(-GC_part_2[i].w));
+		float sY = 1.0f / (1.0f + expf(-GC_part_3[i].x));
+		float sZ = 1.0f / (1.0f + expf(-GC_part_3[i].y));
+
+		float tmpX = sqrtf(chi_square_squared_radius_host * ((sX * sX * Q11 * Q11) + (sY * sY * Q12 * Q12) + (sZ * sZ * Q13 * Q13)));
+		float tmpY = sqrtf(chi_square_squared_radius_host * ((sX * sX * Q21 * Q21) + (sY * sY * Q22 * Q22) + (sZ * sZ * Q23 * Q23)));
+		float tmpZ = sqrtf(chi_square_squared_radius_host * ((sX * sX * Q31 * Q31) + (sY * sY * Q32 * Q32) + (sZ * sZ * Q33 * Q33)));
+
+		aabbs[(i * 6) + 0] = GC_part_2[i].x - tmpX; // !!! !!! !!!
+		aabbs[(i * 6) + 3] = GC_part_2[i].x + tmpX; // !!! !!! !!!
+
+		aabbs[(i * 6) + 1] = GC_part_2[i].y - tmpY; // !!! !!! !!!
+		aabbs[(i * 6) + 4] = GC_part_2[i].y + tmpY; // !!! !!! !!!
+
+		aabbs[(i * 6) + 2] = GC_part_2[i].z - tmpZ; // !!! !!! !!!
+		aabbs[(i * 6) + 5] = GC_part_2[i].z + tmpZ; // !!! !!! !!!
+
+		auxiliary_values_local.scene_lower_bound.x = (
+			(Float2SortableUint(aabbs[(i * 6) + 0]) < auxiliary_values_local.scene_lower_bound.x) ?
+			Float2SortableUint(aabbs[(i * 6) + 0]) :
+			auxiliary_values_local.scene_lower_bound.x
+			);
+		auxiliary_values_local.scene_lower_bound.y = (
+			(Float2SortableUint(aabbs[(i * 6) + 1]) < auxiliary_values_local.scene_lower_bound.y) ?
+			Float2SortableUint(aabbs[(i * 6) + 1]) :
+			auxiliary_values_local.scene_lower_bound.y
+			);
+		auxiliary_values_local.scene_lower_bound.z = (
+			(Float2SortableUint(aabbs[(i * 6) + 2]) < auxiliary_values_local.scene_lower_bound.z) ?
+			Float2SortableUint(aabbs[(i * 6) + 2]) :
+			auxiliary_values_local.scene_lower_bound.z
+			);
+
+		auxiliary_values_local.scene_upper_bound.x = (
+			(Float2SortableUint(aabbs[(i * 6) + 3]) > auxiliary_values_local.scene_upper_bound.x) ?
+			Float2SortableUint(aabbs[(i * 6) + 3]) :
+			auxiliary_values_local.scene_upper_bound.x
+			);
+		auxiliary_values_local.scene_upper_bound.y = (
+			(Float2SortableUint(aabbs[(i * 6) + 4]) > auxiliary_values_local.scene_upper_bound.y) ?
+			Float2SortableUint(aabbs[(i * 6) + 4]) :
+			auxiliary_values_local.scene_upper_bound.y
+			);
+		auxiliary_values_local.scene_upper_bound.z = (
+			(Float2SortableUint(aabbs[(i * 6) + 5]) > auxiliary_values_local.scene_upper_bound.z) ?
+			Float2SortableUint(aabbs[(i * 6) + 5]) :
+			auxiliary_values_local.scene_upper_bound.z
+			);
+	}
+
+	float dX = SortableUint2Float(auxiliary_values_local.scene_upper_bound.x) - SortableUint2Float(auxiliary_values_local.scene_lower_bound.x);
+	float dY = SortableUint2Float(auxiliary_values_local.scene_upper_bound.y) - SortableUint2Float(auxiliary_values_local.scene_lower_bound.y);
+	float dZ = SortableUint2Float(auxiliary_values_local.scene_upper_bound.z) - SortableUint2Float(auxiliary_values_local.scene_lower_bound.z);
+
+	scene_extent_local = sqrtf((dX * dX) + (dY * dY) + (dZ * dZ));
+
+	// Dopiero teraz, gdy mamy policzony ekstent sceny mo¿emy przycinaæ parametry skali Gaussów.
+	for (int i = 0; i < params_OptiX.numberOfGaussians; ++i) {
+		float sX = 1.0f / (1.0f + expf(-GC_part_2[i].w));
+		float sY = 1.0f / (1.0f + expf(-GC_part_3[i].x));
+		float sZ = 1.0f / (1.0f + expf(-GC_part_3[i].y));
+
+		sX = ((sX < scene_extent_local * min_s_coefficients_clipping_threshold_host) ? scene_extent_local * min_s_coefficients_clipping_threshold_host : sX);
+		sY = ((sY < scene_extent_local * min_s_coefficients_clipping_threshold_host) ? scene_extent_local * min_s_coefficients_clipping_threshold_host : sY);
+		sZ = ((sZ < scene_extent_local * min_s_coefficients_clipping_threshold_host) ? scene_extent_local * min_s_coefficients_clipping_threshold_host : sZ);
+
+		sX = ((sX > scene_extent_local * max_s_coefficients_clipping_threshold_host) ? scene_extent_local * max_s_coefficients_clipping_threshold_host : sX);
+		sY = ((sY > scene_extent_local * max_s_coefficients_clipping_threshold_host) ? scene_extent_local * max_s_coefficients_clipping_threshold_host : sY);
+		sZ = ((sZ > scene_extent_local * max_s_coefficients_clipping_threshold_host) ? scene_extent_local * max_s_coefficients_clipping_threshold_host : sZ);
+
+		GC_part_2[i].w = -logf((1.0f / sX) - 1.0f);
+		GC_part_3[i].x = -logf((1.0f / sY) - 1.0f);
+		GC_part_3[i].y = -logf((1.0f / sZ) - 1.0f);
+	}
+
+	/**********************************************************************************************/
+	/* TRIANGLES                                                                                  */
+	/**********************************************************************************************/
+	float *vertices = (float *)malloc(sizeof(float) * scene->fCnt * 9);
+	for (int i = 0; i < scene->fCnt; ++i) {
+		CFace f = scene->fBuf[i];
+
+		CVec3Df P1 = scene->vBuf[f.P1];
+		vertices[(i * 9) + 0] = P1.X;
+		vertices[(i * 9) + 1] = P1.Y;
+		vertices[(i * 9) + 2] = P1.Z;
+
+		CVec3Df P2 = scene->vBuf[f.P2];
+		vertices[(i * 9) + 3] = P2.X;
+		vertices[(i * 9) + 4] = P2.Y;
+		vertices[(i * 9) + 5] = P2.Z;
+
+		CVec3Df P3 = scene->vBuf[f.P3];
+		vertices[(i * 9) + 6] = P3.X;
+		vertices[(i * 9) + 7] = P3.Y;
+		vertices[(i * 9) + 8] = P3.Z;
+	}
+
+	STriangleComponent *TC = (STriangleComponent *)malloc(sizeof(STriangleComponent) * scene->fCnt);
+	for (int i = 0; i < scene->fCnt; ++i) {
+		CFace f = scene->fBuf[i];
+
+		CVec3Df N1 = scene->nBuf[f.N1];
+		TC[i].N1 = make_float3(N1.X, N1.Y, N1.Z);
+
+		CVec3Df N2 = scene->nBuf[f.N2];
+		TC[i].N2 = make_float3(N2.X, N2.Y, N2.Z);
+
+		CVec3Df N3 = scene->nBuf[f.N3];
+		TC[i].N3 = make_float3(N3.X, N3.Y, N3.Z);
+	}
+
+	error_CUDA = cudaMalloc(&params_OptiXMesh.TC, sizeof(STriangleComponent) * scene->fCnt);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	cudaMemcpy(params_OptiXMesh.TC, TC, sizeof(STriangleComponent) * scene->fCnt, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	void *vertexBuffer;
+
+	cudaMalloc(&vertexBuffer, sizeof(float) * 9 * scene->fCnt);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	cudaMemcpy(vertexBuffer, vertices, sizeof(float) * 9 * scene->fCnt, cudaMemcpyHostToDevice);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	OptixBuildInput input_tri = {};
+	input_tri.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
+	input_tri.triangleArray.vertexBuffers = (CUdeviceptr *)&vertexBuffer;
+	input_tri.triangleArray.numVertices = scene->fCnt * 3;
+	input_tri.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
+
+	int *input_tri_flags[1] = {0};
+	input_tri.triangleArray.flags         = (const unsigned int *)input_tri_flags;
+	input_tri.triangleArray.numSbtRecords = 1;
+
+	// *********************************************************************************************
+
+	error_CUDA = cudaMalloc(&params_OptiX.GC_part_1_1, sizeof(float4) * params_OptiX.numberOfGaussians);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.GC_part_2_1, sizeof(float4) * params_OptiX.numberOfGaussians);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.GC_part_3_1, sizeof(float4) * params_OptiX.numberOfGaussians);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiX.GC_part_4_1, sizeof(float2) * params_OptiX.numberOfGaussians);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpy(params_OptiX.GC_part_1_1, GC_part_1, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpy(params_OptiX.GC_part_2_1, GC_part_2, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpy(params_OptiX.GC_part_3_1, GC_part_3, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpy(params_OptiX.GC_part_4_1, GC_part_4, sizeof(float2) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	free(GC_part_1);
+	free(GC_part_2);
+	free(GC_part_3);
+	free(GC_part_4);
+
+	// *********************************************************************************************
+
+	error_CUDA = cudaMalloc(&params_OptiX.aabbBuffer, sizeof(float) * 6 * params_OptiX.numberOfGaussians); // !!! !!! !!!
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpy(params_OptiX.aabbBuffer, aabbs, sizeof(float) * 6 * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpyToSymbol(auxiliary_values, &auxiliary_values_local, sizeof(SAuxiliaryValues) * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpyToSymbol(scene_extent, &scene_extent_local, sizeof(float) * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	free(aabbs);
+
+	// *********************************************************************************************
+
+	OptixAccelBuildOptions accel_options = {};
+	accel_options.buildFlags = OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
+	accel_options.operation  = OPTIX_BUILD_OPERATION_BUILD;
+
+	OptixBuildInput aabb_input = {};
+	aabb_input.type                               = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
+	aabb_input.customPrimitiveArray.aabbBuffers   = (CUdeviceptr *)&params_OptiX.aabbBuffer;
+	aabb_input.customPrimitiveArray.numPrimitives = params_OptiX.numberOfGaussians;
+
+	unsigned aabb_input_flags[1]                  = {OPTIX_GEOMETRY_FLAG_NONE};
+	aabb_input.customPrimitiveArray.flags         = (const unsigned int *)aabb_input_flags;
+	aabb_input.customPrimitiveArray.numSbtRecords = 1;
+
+	// *********************************************************************************************
+
+	OptixAccelBufferSizes blasBufferSizes;
+	error_OptiX = optixAccelComputeMemoryUsage(
+		params_OptiX.optixContext,
+		&accel_options,
+		&aabb_input,
+		1,
+		&blasBufferSizes
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	// *********************************************************************************************
+
+	error_CUDA = cudaMalloc(&params_OptiX.compactedSizeBuffer, 8);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	OptixAccelEmitDesc emitDesc;
+	emitDesc.type   = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
+	emitDesc.result = (CUdeviceptr)params_OptiX.compactedSizeBuffer;
+
+	params_OptiX.tempBufferSize = blasBufferSizes.tempSizeInBytes * 2; // !!! !!! !!!
+	error_CUDA = cudaMalloc(&params_OptiX.tempBuffer, params_OptiX.tempBufferSize);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	params_OptiX.outputBufferSize = blasBufferSizes.outputSizeInBytes * 2; // !!! !!! !!!
+	error_CUDA = cudaMalloc(&params_OptiX.outputBuffer, params_OptiX.outputBufferSize);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	// *********************************************************************************************
+
+	error_OptiX = optixAccelBuild(
+		params_OptiX.optixContext,
+		0,
+		&accel_options,
+		&aabb_input,
+		1,  
+		(CUdeviceptr)params_OptiX.tempBuffer,
+		blasBufferSizes.tempSizeInBytes,
+		(CUdeviceptr)params_OptiX.outputBuffer,
+		blasBufferSizes.outputSizeInBytes,
+		&params_OptiX.asHandle,
+		&emitDesc,
+		1
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	cudaDeviceSynchronize();
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	unsigned long long compactedSize;
+	error_CUDA = cudaMemcpy(&compactedSize, params_OptiX.compactedSizeBuffer, 8, cudaMemcpyDeviceToHost);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	params_OptiX.asBufferSize = compactedSize * 2; // !!! !!! !!! 
+	error_CUDA = cudaMalloc(&params_OptiX.asBuffer, params_OptiX.asBufferSize);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_OptiX = optixAccelCompact(
+		params_OptiX.optixContext,
+		0,
+		params_OptiX.asHandle,
+		(CUdeviceptr)params_OptiX.asBuffer,
+		compactedSize,
+		&params_OptiX.asHandle
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	cudaDeviceSynchronize();
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	/**********************************************************************************************/
+	/* TRIANGLES                                                                                  */
+	/**********************************************************************************************/
+
+	accel_options.buildFlags |= OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS;
+
+	error_OptiX = optixAccelComputeMemoryUsage(
+		params_OptiX.optixContext,
+		&accel_options,
+		&input_tri,
+		1,  // num_build_inputs
+		&blasBufferSizes
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	void *tempBuffer;
+	
+	cudaMalloc(&tempBuffer, blasBufferSizes.tempSizeInBytes);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	void *outputBuffer;
+
+	cudaMalloc(&outputBuffer, blasBufferSizes.outputSizeInBytes);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	OptixTraversableHandle asHandle_tri;
+
+	error_OptiX = optixAccelBuild(
+		params_OptiX.optixContext,
+		0,
+		&accel_options,
+		&input_tri,
+		1,  
+		(CUdeviceptr)tempBuffer,
+		blasBufferSizes.tempSizeInBytes,
+		(CUdeviceptr)outputBuffer,
+		blasBufferSizes.outputSizeInBytes,
+		&asHandle_tri,
+		&emitDesc,
+		1
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	error_CUDA = cudaMemcpy(&compactedSize, params_OptiX.compactedSizeBuffer, 8, cudaMemcpyDeviceToHost);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	void *asBuffer_tri;
+
+	error_CUDA = cudaMalloc(&asBuffer_tri, compactedSize);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_OptiX = optixAccelCompact(
+		params_OptiX.optixContext,
+		0,
+		asHandle_tri,
+		(CUdeviceptr)asBuffer_tri,
+		compactedSize,
+		&asHandle_tri
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	cudaDeviceSynchronize();
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	/**********************************************************************************************/
+	/* INSTANCES                                                                                  */
+	/**********************************************************************************************/
+
+	OptixInstance instances[2];
+	float transform[12] = {
+		1,0,0,0,
+		0,1,0,0,
+		0,0,1,0
+	};
+
+	OptixInstance instance_Gau = {};
+	instance_Gau.instanceId = 0;
+	instance_Gau.visibilityMask = 255;
+	instance_Gau.sbtOffset = 0;
+	instance_Gau.flags = OPTIX_INSTANCE_FLAG_NONE;
+	memcpy(instance_Gau.transform, transform, sizeof(float) * 12);
+	instance_Gau.traversableHandle = params_OptiX.asHandle;
+	instances[0] = instance_Gau;
+
+	OptixInstance instance_tri = {};
+	instance_tri.instanceId = 0;
+	instance_tri.visibilityMask = 255;
+	instance_tri.sbtOffset = 1;
+	instance_tri.flags = OPTIX_INSTANCE_FLAG_NONE;
+	memcpy(instance_tri.transform, transform, sizeof(float) * 12);
+	instance_tri.traversableHandle = asHandle_tri;
+	instances[1] = instance_tri;
+
+	//************************************************************************************************
+
+	OptixBuildInput input_Ins = {};
+
+	void *instancesBuffer;
+
+	cudaMalloc(&instancesBuffer, sizeof(OptixInstance) * 2);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	cudaMemcpy(instancesBuffer, instances, sizeof(OptixInstance) * 2, cudaMemcpyHostToDevice);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	input_Ins.type                       = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
+	input_Ins.instanceArray.instances    = (CUdeviceptr)instancesBuffer;
+	input_Ins.instanceArray.numInstances = 2;
+
+	OptixAccelBuildOptions accelBuildOptions = {};
+	accelBuildOptions.buildFlags             = OPTIX_BUILD_FLAG_NONE;
+	accelBuildOptions.operation              = OPTIX_BUILD_OPERATION_BUILD;
+
+	error_OptiX = optixAccelComputeMemoryUsage(
+		params_OptiX.optixContext,
+		&accelBuildOptions,
+		&input_Ins,
+		1,  // num_build_inputs
+		&blasBufferSizes
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	cudaMalloc(&tempBuffer, blasBufferSizes.tempSizeInBytes);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	cudaMalloc(&outputBuffer, blasBufferSizes.outputSizeInBytes);
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	OptixTraversableHandle asHandle_Ins;
+
+	error_OptiX = optixAccelBuild(
+		params_OptiX.optixContext,
+		0,
+		&accelBuildOptions,
+		&input_Ins,
+		1,  
+		(CUdeviceptr)tempBuffer,
+		blasBufferSizes.tempSizeInBytes,
+		(CUdeviceptr)outputBuffer,
+		blasBufferSizes.outputSizeInBytes,
+		&asHandle_Ins,
+		NULL,
+		0
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	cudaDeviceSynchronize();
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	// !!! !!! !!!
+	params_OptiX.asHandle = asHandle_Ins;
+	params_OptiXMesh.asHandle = asHandle_tri;
+	// !!! !!! !!!
+
+	// *********************************************************************************************
+
+	params_OptiX.width = params.w; // !!! !!! !!!
+
+	error_CUDA = cudaMalloc(&params_OptiX.bitmap_out_device, sizeof(unsigned) * params_OptiX.width * params_OptiX.width);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	params_OptiX.bitmap_out_host = (unsigned *)params.bitmap; // !!! !!! !!!
+
+	// *********************************************************************************************
+	
+	return true;
+Error:
+	return false;
+}
+
+//**************************************************************************************************
+//* RenderOptiXMesh                                                                                *
+//**************************************************************************************************
+
+bool RenderOptiXMesh(SOptiXRenderParams& params_OptiX, SOptiXRenderParamsMesh &params_OptiXMesh) {
+	cudaError_t error_CUDA;
+	OptixResult error_OptiX;
+
+	// *********************************************************************************************
+
+	LaunchParamsMesh launchParams;
+	launchParams.bitmap = params_OptiX.bitmap_out_device;
+	launchParams.width = params_OptiX.width;
+	launchParams.O = params_OptiX.O;
+	launchParams.R = params_OptiX.R;
+	launchParams.D = params_OptiX.D;
+	launchParams.F = params_OptiX.F;
+	launchParams.FOV = params_OptiX.FOV;
+	launchParams.traversable = params_OptiX.asHandle;
+	launchParams.GC_part_1 = params_OptiX.GC_part_1_1;
+	launchParams.GC_part_2 = params_OptiX.GC_part_2_1;
+	launchParams.GC_part_3 = params_OptiX.GC_part_3_1;
+	launchParams.GC_part_4 = params_OptiX.GC_part_4_1;
+	launchParams.Gaussians_indices = params_OptiX.Gaussians_indices;
+	launchParams.bitmap_out_R = params_OptiX.bitmap_out_R;
+	launchParams.bitmap_out_G = params_OptiX.bitmap_out_G;
+	launchParams.bitmap_out_B = params_OptiX.bitmap_out_B;
+	launchParams.ray_termination_T_threshold = ray_termination_T_threshold_host; // !!! !!! !!!
+	launchParams.last_significant_Gauss_alpha_gradient_precision = last_significant_Gauss_alpha_gradient_precision_host; // !!! !!! !!!
+	launchParams.chi_square_squared_radius = chi_square_squared_radius_host; // !!! !!! !!!
+	launchParams.max_Gaussians_per_ray = max_Gaussians_per_ray_host; // !!! !!! !!!
+	
+	launchParams.TC = params_OptiXMesh.TC;
+	launchParams.traversable_tri = params_OptiXMesh.asHandle;
+
+	void *launchParamsBuffer;
+	error_CUDA = cudaMalloc(&launchParamsBuffer, sizeof(LaunchParamsMesh) * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpy(launchParamsBuffer, &launchParams, sizeof(LaunchParamsMesh) * 1, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_OptiX = optixLaunch(
+		params_OptiX.pipeline,
+		0,
+		(CUdeviceptr)launchParamsBuffer,
+		sizeof(LaunchParamsMesh) * 1,
+		params_OptiX.sbt,
+		params_OptiX.width,
+		params_OptiX.width,
+		1
+	);
+	if (error_OptiX != OPTIX_SUCCESS) goto Error;
+
+	cudaDeviceSynchronize();
+	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	// *********************************************************************************************
+
+	if (params_OptiX.copyBitmapToHostMemory) {
+		error_CUDA = cudaMemcpy(
+			params_OptiX.bitmap_out_host,
+			params_OptiX.bitmap_out_device,
+			sizeof(unsigned) * params_OptiX.width * params_OptiX.width,
+			cudaMemcpyDeviceToHost
+		);
+		if (error_CUDA != cudaSuccess) goto Error;
+	}
+
+	// *********************************************************************************************
+
+	return true;
+Error:
+	return false;
 }

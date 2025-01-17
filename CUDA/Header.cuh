@@ -17,8 +17,9 @@
 #define MAX_RAY_LENGTH 1 // DO P”èNIEJSZEGO USUNI CIA (NIEPOTRZEBNE W RENDERERZE OPTIXOWYM)
 //#define USE_DOUBLE_PRECISION // DO P”èNIEJSZEGO USUNI CIA (NIEPOTRZEBNE W RENDERERZE OPTIXOWYM)
 
-#define RENDERER_OPTIX_USE_DOUBLE_PRECISION
-#define GRADIENT_OPTIX_USE_DOUBLE_PRECISION
+#define SSIM_REDUCE_MEMORY_OVERHEAD
+//#define RENDERER_OPTIX_USE_DOUBLE_PRECISION
+//#define GRADIENT_OPTIX_USE_DOUBLE_PRECISION
 //#define OPTIMIZER_OPTIX_USE_DOUBLE_PRECISION // to be implemented
 
 #ifndef USE_DOUBLE_PRECISION
@@ -281,7 +282,7 @@ struct SOptiXRenderParams {
 	void *hitgroupRecordsBuffer;
 
 	int numberOfGaussians;
-	int maxNumberOfGaussians1, maxNumberOfGaussians2;
+	int maxNumberOfGaussians;
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;

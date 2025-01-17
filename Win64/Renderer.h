@@ -2,6 +2,10 @@
 
 #include <Windows.h>
 
+// !!! !!! !!!
+#include "C3DScene.h"
+// !!! !!! !!!
+
 // *** *** *** *** ***
 
 struct SCamera {
@@ -226,7 +230,7 @@ struct SOptiXRenderParams {
 	void *hitgroupRecordsBuffer;
 
 	int numberOfGaussians;
-	int maxNumberOfGaussians1, maxNumberOfGaussians2;
+	int maxNumberOfGaussians;
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -406,3 +410,20 @@ extern bool RenderOptiX(SOptiXRenderParams& params_OptiX);
 extern bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state);
 
 extern bool DumpParameters(SOptiXRenderParams& params_OptiX);
+
+
+
+struct SOptiXRenderParamsMesh {
+	void *TC;
+	unsigned long long asHandle;
+};
+
+extern bool InitializeOptiXRendererMesh(
+	SRenderParams &params,
+	SOptiXRenderParams &params_OptiX,
+	C3DScene *scene,
+	SOptiXRenderParamsMesh &params_OptiXMesh,
+	bool loadFromFile = false,
+	int epoch = 0
+);
+extern bool RenderOptiXMesh(SOptiXRenderParams& params_OptiX, SOptiXRenderParamsMesh &params_OptiXMesh);
