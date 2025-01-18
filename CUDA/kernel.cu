@@ -35,8 +35,7 @@ extern bool InitializeCUDARenderer(SRenderParams& params, SCUDARenderParams& dev
 	dev_params.Rx = params.Rx; dev_params.Ry = params.Ry; dev_params.Rz = params.Rz;
 	dev_params.Dx = params.Dx; dev_params.Dy = params.Dy; dev_params.Dz = params.Dz;
 	dev_params.Fx = params.Fx; dev_params.Fy = params.Fy; dev_params.Fz = params.Fz;
-	dev_params.FOV = params.FOV; // !!! !!! !!!
-
+	
 	// *** *** *** *** ***
 
 	// bitmap

@@ -13,10 +13,12 @@
 struct LaunchParams {
 	unsigned *bitmap;
 	unsigned width;
+	unsigned height;
 
 	float3 O;
 	float3 R, D, F;
-	float FOV;
+	float double_tan_half_fov_x;
+	float double_tan_half_fov_y;
 
 	OptixTraversableHandle traversable;
 
@@ -40,6 +42,8 @@ extern "C" __constant__ LaunchParams optixLaunchParams;
 
 // *************************************************************************************************
 
+// 3115 2078 "fy": 3240.8079303073573, "fx": 3231.5814007282897
+
 // !!! !!! !!!
 // Dodanie extern "C" zapobiega name manglingowi, który utrudni³by znalezienie w za³adowanym pliku *.ptx funkcji po ich oryginalnych nazwach.
 // !!! !!! !!!
@@ -49,10 +53,15 @@ extern "C" __global__ void __raygen__renderFrame() {
 	int pixel_ind = (y * optixLaunchParams.width) + x;
 	
 	REAL3_R d = make_REAL3_R(
-		((REAL_R)-0.5) + ((x + ((REAL_R)0.5)) / optixLaunchParams.width),
-		((REAL_R)-0.5) + ((y + ((REAL_R)0.5)) / optixLaunchParams.width),
-		((REAL_R)0.5) / TAN_R(((REAL_R)0.5) * optixLaunchParams.FOV)
+		(((REAL_R)-0.5) + ((x + ((REAL_R)0.5)) / optixLaunchParams.width)) * optixLaunchParams.double_tan_half_fov_x,
+		(((REAL_R)-0.5) + ((y + ((REAL_R)0.5)) / optixLaunchParams.height)) * optixLaunchParams.double_tan_half_fov_y,
+		1,
 	);
+	/*REAL3_R d = make_REAL3_R(
+		((REAL_R)-0.5) + ((x + ((REAL_R)0.5)) / optixLaunchParams.width),
+		((REAL_R)-0.5) + ((y + ((REAL_R)0.5)) / optixLaunchParams.height),
+		((REAL_R)0.5) / TAN_R(((REAL_R)0.5) * optixLaunchParams.FOV),
+	);*/
 	REAL3_R v = make_REAL3_R(
 		MAD_R(optixLaunchParams.R.x, d.x, MAD_R(optixLaunchParams.D.x, d.y, optixLaunchParams.F.x * d.z)),
 		MAD_R(optixLaunchParams.R.y, d.x, MAD_R(optixLaunchParams.D.y, d.y, optixLaunchParams.F.y * d.z)),
@@ -95,7 +104,7 @@ extern "C" __global__ void __raygen__renderFrame() {
 			t_as_uint
 		);
 		
-		optixLaunchParams.Gaussians_indices[(i * optixLaunchParams.width * optixLaunchParams.width) + pixel_ind] = Gauss_ind;
+		optixLaunchParams.Gaussians_indices[(i * optixLaunchParams.width * optixLaunchParams.height) + pixel_ind] = Gauss_ind;
 		if (Gauss_ind != -1) {
 			float4 GC_1 = optixLaunchParams.GC_part_1[Gauss_ind];
 			float4 GC_2 = optixLaunchParams.GC_part_2[Gauss_ind];
@@ -187,7 +196,7 @@ extern "C" __global__ void __raygen__renderFrame() {
 				tMin = nextafter(t, INFINITY);
 			} else {
 				if (i < optixLaunchParams.max_Gaussians_per_ray - 1)
-					optixLaunchParams.Gaussians_indices[((i + 1) * optixLaunchParams.width * optixLaunchParams.width) + pixel_ind] = -1;
+					optixLaunchParams.Gaussians_indices[((i + 1) * optixLaunchParams.width * optixLaunchParams.height) + pixel_ind] = -1;
 				break;
 			}
 		} else

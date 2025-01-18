@@ -157,7 +157,8 @@ struct SRenderParams {
 	float Rx; float Ry; float Rz;
 	float Dx; float Dy; float Dz;
 	float Fx; float Fy; float Fz;
-	float FOV;
+	float double_tan_half_fov_x;
+	float double_tan_half_fov_y;
 	void* bitmap;
 	int w; int h;
 	SLBVHTreeNode* tree;
@@ -298,10 +299,12 @@ struct SOptiXRenderParams {
 	unsigned *bitmap_out_device;
 	unsigned *bitmap_out_host;
 	unsigned width;
+	unsigned height;
 
 	float3 O;
 	float3 R, D, F;
-	float FOV;
+	float double_tan_half_fov_x;
+	float double_tan_half_fov_y;
 
 	float4 *GC_part_1_1, *GC_part_1_2;
 	float4 *GC_part_2_1, *GC_part_2_2;
@@ -376,6 +379,8 @@ struct SOptiXRenderConfig {
 	char *learning_phase;
 	char *data_path;
 	char *pretrained_model_path;
+	char *data_format;
+
 	int start_epoch;
 	int end_epoch;
 

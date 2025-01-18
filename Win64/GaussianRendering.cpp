@@ -87,7 +87,8 @@ float Fx = 0.0f; float Fy = 0.0f; float Fz = 1.0f;
 float yaw = 0.0f;
 float pitch = 0.0f;
 
-float FOV;
+float double_tan_half_fov_x;
+float double_tan_half_fov_y;
 
 SRenderParams *params;
 SCUDARenderParams dev_params;
@@ -132,6 +133,7 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 
 	fgets(buf, 256, f);
 
+	float FOV;
 	fgets(buf, 256, f);
 	sscanf_s(buf, " \"camera_angle_x\": %f", &FOV);
 
@@ -152,20 +154,25 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 
 			fopen_s(&f_bitmap, filePath, "rb");
 
+			int scanLineSize;
 			if (poseNum == 0) {
 				fseek(f_bitmap, 18, SEEK_SET);
 				fread(&bitmapWidth, 4, 1, f_bitmap);
 				fread(&bitmapHeight, 4, 1, f_bitmap);
+				scanLineSize = (((bitmapWidth * 3) + 3) & -4);
 				bitmap = (int *)malloc(sizeof(int) * bitmapWidth * bitmapHeight * numberOfPoses);
-				bitmap_tmp = malloc(bitmapWidth * bitmapHeight * 3);
+				bitmap_tmp = malloc(scanLineSize * bitmapHeight);
+
+				double_tan_half_fov_x = 2.0f * tanf(FOV * 0.5f);
+				double_tan_half_fov_y = 2.0f * tanf(FOV * 0.5f);
 			}
 			fseek(f_bitmap, 54, SEEK_SET);
-			fread(bitmap_tmp, bitmapWidth * bitmapHeight * 3, 1, f_bitmap);
+			fread(bitmap_tmp, scanLineSize * bitmapHeight, 1, f_bitmap);
 			for (int i = 0; i < bitmapHeight; ++i) {
 				for (int j = 0; j < bitmapWidth; ++j) {
-					unsigned char B = ((char *)bitmap_tmp)[(((bitmapHeight - 1 - i) * bitmapWidth) + j) * 3];
-					unsigned char G = ((char *)bitmap_tmp)[((((bitmapHeight - 1 - i) * bitmapWidth) + j) * 3) + 1];
-					unsigned char R = ((char *)bitmap_tmp)[((((bitmapHeight - 1 - i) * bitmapWidth) + j) * 3) + 2];
+					unsigned char B = ((char *)bitmap_tmp)[((bitmapHeight - 1 - i) * scanLineSize) + (j * 3) + 0];
+					unsigned char G = ((char *)bitmap_tmp)[((bitmapHeight - 1 - i) * scanLineSize) + (j * 3) + 1];
+					unsigned char R = ((char *)bitmap_tmp)[((bitmapHeight - 1 - i) * scanLineSize) + (j * 3) + 2];
 					bitmap[(poseNum * (bitmapWidth * bitmapHeight)) + (i * bitmapWidth) + j] = (R << 16) + (G << 8) + B;
 				}
 			}
@@ -326,6 +333,15 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	config.pretrained_model_path = (char *)malloc(sizeof(char) * (pos + 2));
 	strncpy_s(config.pretrained_model_path, 256, buf, pos + 1);
 	config.pretrained_model_path[pos + 1] = 0;
+
+	// (??) Data format
+	fgets(buf, 256, f);
+	pos = (strstr(buf, "<") - buf);
+	--pos;
+	while (buf[pos] == ' ') --pos;
+	config.data_format = (char *)malloc(sizeof(char) * (pos + 2));
+	strncpy_s(config.data_format, 256, buf, pos + 1);
+	config.data_format[pos + 1] = 0;
 
 	// (3) Start epoch
 	fgets(buf, 256, f);
@@ -503,17 +519,201 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 SOptiXRenderConfig config;
 // !!! !!! !!!
 
+//   -*-   -*-   -*-   -*-   -*-
+
+void LoadSceneAndCameraCOLMAP(
+	const char *dataPath,
+	const char *jsonFileName,
+	int &numberOfPoses_train,
+	int &numberOfPoses_test,
+	SCamera *&poses_train,
+	SCamera *&poses_test,
+	int *&bitmap_train,
+	int *&bitmap_test,
+	int &bitmapWidth, int &bitmapHeight,
+	float &double_tan_half_fov_x, float &double_tan_half_fov_y
+) {
+	FILE *f;
+	
+	char filePath[256];
+	strcpy_s(filePath, dataPath);
+	strcat_s(filePath, "/");
+	strcat_s(filePath, jsonFileName);
+
+	fopen_s(&f, filePath, "rb");
+	fseek(f, 0, SEEK_END);
+	int fSize = ftell(f);
+	fclose(f);
+
+	char *buf = (char *)malloc(sizeof(char) * (fSize + 1));
+
+	fopen_s(&f, filePath, "rt");
+	fread(buf, fSize, 1, f);
+	buf[fSize] = 0;
+	fclose(f);
+
+	int numberOfPoses = 0;
+	char *tmp1 = buf;
+	char *tmp2 = strstr(tmp1, "\"id\"");
+	while (tmp2 != NULL) {
+		++numberOfPoses;
+
+		tmp1 = tmp2 + 2;
+		tmp2 = strstr(tmp1, "\"id\"");
+	}
+
+	numberOfPoses_test = (numberOfPoses + 7) >> 3;
+	numberOfPoses_train = numberOfPoses - numberOfPoses_test;
+	poses_train = (SCamera*)malloc(sizeof(SCamera) * numberOfPoses_train);
+	poses_test = (SCamera*)malloc(sizeof(SCamera) * numberOfPoses_test);
+	
+	void *bitmap_tmp = NULL;
+
+	tmp1 = buf;
+	for (int poseNum = 0; poseNum < numberOfPoses; ++poseNum) {
+		tmp2 = strstr(tmp1, "\"img_name\"");		
+		char tmp3[256];
+		sscanf_s(tmp2, "\"img_name\": \"%s", tmp3, 256);
+		char *next;
+		char *fName = strtok_s(tmp3, "\"", &next);
+		tmp1 = tmp2 + strlen("\"img_name\":");
+
+		// *** *** *** *** ***
+
+		FILE *f_bitmap;
+		strcpy_s(filePath, dataPath);
+		strcat_s(filePath, "/images/");
+		strcat_s(filePath, fName);
+		strcat_s(filePath, ".bmp");
+
+		fopen_s(&f_bitmap, filePath, "rb");
+
+		int scanLineSize;
+		if (poseNum == 0) {
+			fseek(f_bitmap, 18, SEEK_SET);
+			fread(&bitmapWidth, 4, 1, f_bitmap);
+			fread(&bitmapHeight, 4, 1, f_bitmap);
+			scanLineSize = (((bitmapWidth * 3) + 3) & -4);
+			bitmap_train = (int *)malloc(sizeof(int) * bitmapWidth * bitmapHeight * numberOfPoses_train);
+			bitmap_test = (int *)malloc(sizeof(int) * bitmapWidth * bitmapHeight * numberOfPoses_test);
+			bitmap_tmp = malloc(scanLineSize * bitmapHeight);
+
+			numberOfPoses_train = 0; // !!! !!! !!!
+			numberOfPoses_test = 0; // !!! !!! !!!
+		}
+		fseek(f_bitmap, 54, SEEK_SET);
+		fread(bitmap_tmp, scanLineSize * bitmapHeight, 1, f_bitmap);
+		for (int i = 0; i < bitmapHeight; ++i) {
+			for (int j = 0; j < bitmapWidth; ++j) {
+				unsigned char B = ((char *)bitmap_tmp)[((bitmapHeight - 1 - i) * scanLineSize) + (j * 3) + 0];
+				unsigned char G = ((char *)bitmap_tmp)[((bitmapHeight - 1 - i) * scanLineSize) + (j * 3) + 1];
+				unsigned char R = ((char *)bitmap_tmp)[((bitmapHeight - 1 - i) * scanLineSize) + (j * 3) + 2];
+				if ((poseNum & 7) != 0)
+					bitmap_train[(numberOfPoses_train * (bitmapWidth * bitmapHeight)) + (i * bitmapWidth) + j] = (R << 16) + (G << 8) + B;
+				else
+					bitmap_test[(numberOfPoses_test * (bitmapWidth * bitmapHeight)) + (i * bitmapWidth) + j] = (R << 16) + (G << 8) + B;
+			}
+		}
+
+		fclose(f_bitmap);
+
+		// *** *** *** *** ***
+		
+		int width;
+		tmp2 = strstr(tmp1, "\"width\"");
+		sscanf_s(tmp2, "\"width\": %d", &width, 256);
+		tmp1 = tmp2 + strlen("\"width\":");
+
+		int height;
+		tmp2 = strstr(tmp1, "\"height\"");
+		sscanf_s(tmp2, "\"height\": %d", &height, 256);
+		tmp1 = tmp2 + strlen("\"height\":");
+		
+		tmp2 = strstr(tmp1, "\"position\"");
+		if ((poseNum & 7) != 0)
+			sscanf_s(
+				tmp2,
+				"\"position\": [%f, %f, %f]",
+				&poses_train[numberOfPoses_train].Ox, &poses_train[numberOfPoses_train].Oy, &poses_train[numberOfPoses_train].Oz,
+				256
+			);
+		else
+			sscanf_s(
+				tmp2,
+				"\"position\": [%f, %f, %f]",
+				&poses_test[numberOfPoses_test].Ox, &poses_test[numberOfPoses_test].Oy, &poses_test[numberOfPoses_test].Oz,
+				256
+			);
+		tmp1 = tmp2 + strlen("\"position\":");
+
+		tmp2 = strstr(tmp1, "\"rotation\"");
+		if ((poseNum & 7) != 0)
+			sscanf_s(
+				tmp2,
+				"\"rotation\": [[%f, %f, %f], [%f, %f, %f], [%f, %f, %f]]",
+				&poses_train[numberOfPoses_train].Rx, &poses_train[numberOfPoses_train].Dx, &poses_train[numberOfPoses_train].Fx,
+				&poses_train[numberOfPoses_train].Ry, &poses_train[numberOfPoses_train].Dy, &poses_train[numberOfPoses_train].Fy,
+				&poses_train[numberOfPoses_train].Rz, &poses_train[numberOfPoses_train].Dz, &poses_train[numberOfPoses_train].Fz,
+				256
+			);
+		else
+			sscanf_s(
+				tmp2,
+				"\"rotation\": [[%f, %f, %f], [%f, %f, %f], [%f, %f, %f]]",
+				&poses_test[numberOfPoses_test].Rx, &poses_test[numberOfPoses_test].Dx, &poses_test[numberOfPoses_test].Fx,
+				&poses_test[numberOfPoses_test].Ry, &poses_test[numberOfPoses_test].Dy, &poses_test[numberOfPoses_test].Fy,
+				&poses_test[numberOfPoses_test].Rz, &poses_test[numberOfPoses_test].Dz, &poses_test[numberOfPoses_test].Fz,
+				256
+			);
+		tmp1 = tmp2 + strlen("\"rotation\":");
+
+		float fy;
+		tmp2 = strstr(tmp1, "\"fy\"");
+		sscanf_s(tmp2, "\"fy\": %f", &fy, 256);
+		double_tan_half_fov_y = height / fy;
+		tmp1 = tmp2 + strlen("\"fy\":");
+
+		float fx;
+		tmp2 = strstr(tmp1, "\"fx\"");
+		sscanf_s(tmp2, "\"fx\": %f", &fx, 256);
+		double_tan_half_fov_x = width / fx;
+		tmp1 = tmp2 + strlen("\"fx\":");
+
+		if ((poseNum & 7) != 0)
+			++numberOfPoses_train;
+		else
+			++numberOfPoses_test;
+	}
+}
+
+//   -*-   -*-   -*-   -*-   -*-
+
 void PrepareScene() {
 	LoadConfigFile("config.txt", config); // !!! !!! !!!
 
-	if (strcmp(config.learning_phase, "training") == 0) {
-		LoadSceneAndCamera(config.data_path, "transforms_train.json", NUMBER_OF_POSES, poses, bitmap_ref); // !!! !!! !!!
-		LoadSceneAndCamera(config.data_path, "transforms_test.json", NUMBER_OF_POSES_TEST, poses_test, bitmap_ref_test); // !!! !!! !!!
-	} else {
-		if (strcmp(config.learning_phase, "validation") == 0)
-			LoadSceneAndCamera(config.data_path, "transforms_val.json", NUMBER_OF_POSES, poses, bitmap_ref); // !!! !!! !!!
-		else
-			PostQuitMessage(0);
+	if (strcmp(config.data_format, "colmap") == 0)
+		LoadSceneAndCameraCOLMAP(
+			config.data_path,
+			"cameras.json",
+			NUMBER_OF_POSES,
+			NUMBER_OF_POSES_TEST,
+			poses,
+			poses_test,
+			bitmap_ref,
+			bitmap_ref_test,
+			bitmapWidth, bitmapHeight,
+			double_tan_half_fov_x, double_tan_half_fov_y
+		); // !!! !!! !!!
+	else {
+		if (strcmp(config.learning_phase, "training") == 0) {
+			LoadSceneAndCamera(config.data_path, "transforms_train.json", NUMBER_OF_POSES, poses, bitmap_ref); // !!! !!! !!!
+			LoadSceneAndCamera(config.data_path, "transforms_test.json", NUMBER_OF_POSES_TEST, poses_test, bitmap_ref_test); // !!! !!! !!!
+		} else {
+			if (strcmp(config.learning_phase, "validation") == 0)
+				LoadSceneAndCamera(config.data_path, "transforms_val.json", NUMBER_OF_POSES, poses, bitmap_ref); // !!! !!! !!!
+			else
+				PostQuitMessage(0);
+		}
 	}
 
 	// *** *** ***
@@ -565,11 +765,15 @@ void PrepareScene() {
 			GC[i].mX = pfs.x;
 			GC[i].mY = pfs.y;
 			GC[i].mZ = pfs.z;
-
+			
 			// Potrzebne, bo w GS daj¹ œrednicê, a nie promieñ na poszczególnych osiach
 			double sX = 0.5f / (1.0 + exp(-pfs.scale_0));
 			double sY = 0.5f / (1.0 + exp(-pfs.scale_1));
 			double sZ = 0.5f / (1.0 + exp(-pfs.scale_2));
+
+			//sX = sX * 2.0; // !!! !!! !!!
+			//sY = sY * 2.0; // !!! !!! !!!
+			//sZ = sZ * 2.0; // !!! !!! !!!
 
 			GC[i].sX = -log((1.0 / sX) - 1.0);
 			GC[i].sY = -log((1.0 / sY) - 1.0);
@@ -772,8 +976,10 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 		params[i].Rx = Rx; params[i].Ry = Ry; params[i].Rz = Rz;
 		params[i].Dx = Dx; params[i].Dy = Dy; params[i].Dz = Dz;
 		params[i].Fx = Fx; params[i].Fy = Fy; params[i].Fz = Fz;
-		params[i].FOV = FOV; // !!! !!! !!!
-		//params[i].FOV = 0.5f * M_PI; // !!! !!! !!!
+		// !!! !!! !!!
+		params[i].double_tan_half_fov_x = double_tan_half_fov_x;
+		params[i].double_tan_half_fov_y = double_tan_half_fov_y;
+		// !!! !!! !!!
 		params[i].bitmap = bitmap;
 		params[i].w = bitmapWidth; params[i].h = bitmapHeight;
 		params[i].tree = tree;
@@ -810,6 +1016,8 @@ bool result;
 
 	//**********************************************************************************************
 
+//#define VISUALIZATION
+
 #ifndef CUDA_RENDERER
 	// Trzeba wywo³ywaæ w pierwszej kolejnoœci, poniewa¿ ustawia maksymaln¹ d³ugoœæ œcie¿ki, która jest wykorzystywana przy inicjalizacji
 	// do alokowania tablicy indeksów Gaussów.
@@ -823,6 +1031,11 @@ bool result;
 		swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
+		float lB, rB, uB, dB, bB, fB, scene_extent;
+		GetSceneBoundsOptiX(lB, rB, uB, dB, bB, fB, scene_extent);
+		swprintf(consoleBuffer, 256, L"EXTENT INITIAL: %f %f %f", rB - lB, dB - uB, fB - bB);
+		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
 		swprintf(consoleBuffer, 256, L"%d\n", params_OptiX.width);
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
@@ -832,57 +1045,64 @@ bool result;
 
 		epochNumStart = epochNum;
 	} else {
-		// LOAD FROM SAVED PARAMS
-		C3DScene *scene = new C3DScene();
-		int fCntOld = scene->fCnt;
-		int vCntOld = scene->vCnt;
-		int nCntOld = scene->nCnt;
-		scene->LoadOBJFile("dragon_vrip.obj", 0);
+		#ifdef VISUALIZATION
+			// LOAD FROM SAVED PARAMS
+			C3DScene *scene = new C3DScene();
+			int fCntOld = scene->fCnt;
+			int vCntOld = scene->vCnt;
+			int nCntOld = scene->nCnt;
+			scene->LoadOBJFile("dragon_vrip.obj", 0);
 
-		SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
 
-		CMat4Df m = CMat4Df::Translation(
-			CVec3Df(
-				-0.5f * (sceneBounds.rB + sceneBounds.lB),
-				-0.5f * (sceneBounds.dB + sceneBounds.uB),
-				-0.5f * (sceneBounds.fB + sceneBounds.bB)
-			)
-		);
-		scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+			CMat4Df m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
 
-		m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
-		scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
 
-		m = CMat4Df::OXRotation(M_PI / 2.0f);
-		scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+			m = CMat4Df::OXRotation(M_PI / 2.0f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
 
-		m = CMat4Df::Translation(CVec3Df(0.0f, -0.75f, 0.1f));
-		scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+			m = CMat4Df::Translation(CVec3Df(0.0f, -0.75f, 0.1f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
 
-		sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
 
-		swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.lB, sceneBounds.uB, sceneBounds.bB);
-		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-		swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
-		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-		swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
-		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.lB, sceneBounds.uB, sceneBounds.bB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-		//******************************************************************************************
+			// *** *** *** *** ***
 
-		epochNum = config.start_epoch;
-	
-		result = InitializeOptiXRenderer(params[0], params_OptiX, true, epochNum);
-		//result = InitializeOptiXRendererMesh(params[0], params_OptiX, scene, params_OptiXMesh, true, epochNum);
-		swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			epochNum = config.start_epoch;
 
-		result = InitializeOptiXOptimizer(params[0], params_OptiX, true, epochNum);
-		swprintf(consoleBuffer, 256, L"Initializing OptiX optimizer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			result = InitializeOptiXRendererMesh(params[0], params_OptiX, scene, params_OptiXMesh, true, epochNum);
+			swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+		#else
+			epochNum = config.start_epoch;
 
-		++epochNum;
-		epochNumStart = epochNum;
+			result = InitializeOptiXRenderer(params[0], params_OptiX, true, epochNum);
+			swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+			result = InitializeOptiXOptimizer(params[0], params_OptiX, true, epochNum);
+			swprintf(consoleBuffer, 256, L"Initializing OptiX optimizer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+			++epochNum;
+			epochNumStart = epochNum;
+		#endif
 	}
 #endif
 
@@ -1149,11 +1369,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 					switch (phase) {
 						case 2 : {
-							if (!cameraChanged) {
-							//if (false) { // !!! !!! !!!
+							#ifdef VISUALIZATION
+								if (false) { // !!! !!! !!!
+							#else
+								if (!cameraChanged) {
+							#endif
 								//break;
-
-								int NUMBER_OF_POSES = 100;
 								int poseNum_traininggg = poses_indices[0 + poseNum_training];
 								
 								bool result;
@@ -1171,7 +1392,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								params_OptiX.R.x = poses[poseNum_traininggg].Rx; params_OptiX.R.y = poses[poseNum_traininggg].Ry; params_OptiX.R.z = poses[poseNum_traininggg].Rz;
 								params_OptiX.D.x = poses[poseNum_traininggg].Dx; params_OptiX.D.y = poses[poseNum_traininggg].Dy; params_OptiX.D.z = poses[poseNum_traininggg].Dz;
 								params_OptiX.F.x = poses[poseNum_traininggg].Fx; params_OptiX.F.y = poses[poseNum_traininggg].Fy; params_OptiX.F.z = poses[poseNum_traininggg].Fz;
-								params_OptiX.FOV = params[0].FOV;
+		
 								params_OptiX.poseNum = poseNum_traininggg;
 								params_OptiX.epoch = epochNum;
 								params_OptiX.copyBitmapToHostMemory = false;
@@ -1217,7 +1438,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 									swprintf(consoleBuffer, 256, L"EPOCH: %d, GAUSSIANS: %d, LOSS: %.20lf\n", epochNum, params_OptiX.numberOfGaussians, params_OptiX.loss_host / (3.0 * bitmapWidth * bitmapHeight * 1));
 									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
+									
 									// *** *** *** *** ***
 									
 									// TRAIN
@@ -1235,14 +1456,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 											params_OptiX.R.x = poses[pose].Rx; params_OptiX.R.y = poses[pose].Ry; params_OptiX.R.z = poses[pose].Rz;
 											params_OptiX.D.x = poses[pose].Dx; params_OptiX.D.y = poses[pose].Dy; params_OptiX.D.z = poses[pose].Dz;
 											params_OptiX.F.x = poses[pose].Fx; params_OptiX.F.y = poses[pose].Fy; params_OptiX.F.z = poses[pose].Fz;
-											params_OptiX.FOV = params[0].FOV;
 											params_OptiX.copyBitmapToHostMemory = true;
 
 											result = RenderOptiX(params_OptiX);
 											//swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 											//WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-											for (int i = 0; i < params_OptiX.width; ++i) {
+											for (int i = 0; i < params_OptiX.height; ++i) {
 												for (int j = 0; j < params_OptiX.width; ++j) {
 													int color_out = params_OptiX.bitmap_host[(i * params_OptiX.width) + j];
 													int R_out_i = color_out >> 16;
@@ -1252,7 +1472,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 													float G_out = G_out_i / 255.0f;
 													float B_out = B_out_i / 255.0f;
 
-													int color_ref = bitmap_ref[(pose * params_OptiX.width * params_OptiX.width) + ((i * params_OptiX.width) + j)];
+													int color_ref = bitmap_ref[(pose * params_OptiX.width * params_OptiX.height) + ((i * params_OptiX.width) + j)];
 													int R_ref_i = color_ref >> 16;
 													int G_ref_i = (color_ref >> 8) & 255;
 													int B_ref_i = color_ref & 255;
@@ -1263,7 +1483,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 													poseMSE += (((R_out - R_ref) * (R_out - R_ref)) + ((G_out - G_ref) * (G_out - G_ref)) + ((B_out - B_ref) * (B_out - B_ref)));
 												}
 											}
-											poseMSE /= 3.0 * params_OptiX.width * params_OptiX.width;
+											poseMSE /= 3.0 * params_OptiX.width * params_OptiX.height;
 											double posePSNR = -10.0 * (log(poseMSE) / log(10.0));
 
 											swprintf(consoleBuffer, 256, L"TRAIN POSE: %d, PSNR: %.30lf;\n", pose + 1, posePSNR);
@@ -1295,7 +1515,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 									// TEST
 									// !!! !!! !!!
 									if (
-										(strcmp(config.learning_phase, "training") == 0) && (
+										(
+											(strcmp(config.data_format, "colmap") == 0) ||
+											(strcmp(config.learning_phase, "training") == 0)
+										) && (
 											(epochNum % config.evaluation_frequency == config.evaluation_epoch) ||
 											(epochNum == config.end_epoch)
 										)
@@ -1309,14 +1532,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 											params_OptiX.R.x = poses_test[pose].Rx; params_OptiX.R.y = poses_test[pose].Ry; params_OptiX.R.z = poses_test[pose].Rz;
 											params_OptiX.D.x = poses_test[pose].Dx; params_OptiX.D.y = poses_test[pose].Dy; params_OptiX.D.z = poses_test[pose].Dz;
 											params_OptiX.F.x = poses_test[pose].Fx; params_OptiX.F.y = poses_test[pose].Fy; params_OptiX.F.z = poses_test[pose].Fz;
-											params_OptiX.FOV = params[0].FOV;
 											params_OptiX.copyBitmapToHostMemory = true;
 
 											result = RenderOptiX(params_OptiX);
 											//swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 											//WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-											for (int i = 0; i < params_OptiX.width; ++i) {
+											for (int i = 0; i < params_OptiX.height; ++i) {
 												for (int j = 0; j < params_OptiX.width; ++j) {
 													int color_out = params_OptiX.bitmap_host[(i * params_OptiX.width) + j];
 													int R_out_i = color_out >> 16;
@@ -1326,7 +1548,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 													float G_out = G_out_i / 255.0f;
 													float B_out = B_out_i / 255.0f;
 
-													int color_ref = bitmap_ref_test[(pose * params_OptiX.width * params_OptiX.width) + ((i * params_OptiX.width) + j)];
+													int color_ref = bitmap_ref_test[(pose * params_OptiX.width * params_OptiX.height) + ((i * params_OptiX.width) + j)];
 													int R_ref_i = color_ref >> 16;
 													int G_ref_i = (color_ref >> 8) & 255;
 													int B_ref_i = color_ref & 255;
@@ -1337,7 +1559,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 													poseMSE += (((R_out - R_ref) * (R_out - R_ref)) + ((G_out - G_ref) * (G_out - G_ref)) + ((B_out - B_ref) * (B_out - B_ref)));
 												}
 											}
-											poseMSE /= 3.0 * params_OptiX.width * params_OptiX.width;
+											poseMSE /= 3.0 * params_OptiX.width * params_OptiX.height;
 											double posePSNR = -10.0 * (log(poseMSE) / log(10.0));
 
 											swprintf(consoleBuffer, 256, L"TEST POSE: %d, PSNR: %.30lf;\n", pose + 1, posePSNR);
@@ -1425,11 +1647,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								params_OptiX.R.x = Rx; params_OptiX.R.y = Ry; params_OptiX.R.z = Rz;
 								params_OptiX.D.x = Dx; params_OptiX.D.y = Dy; params_OptiX.D.z = Dz;
 								params_OptiX.F.x = Fx; params_OptiX.F.y = Fy; params_OptiX.F.z = Fz;
-								params_OptiX.FOV = params[0].FOV;
 								params_OptiX.copyBitmapToHostMemory = true;
 
-								result = RenderOptiX(params_OptiX);
-								//result = RenderOptiXMesh(params_OptiX, params_OptiXMesh);
+								#ifdef VISUALIZATION
+									result = RenderOptiXMesh(params_OptiX, params_OptiXMesh);
+								#else
+									result = RenderOptiX(params_OptiX);
+								#endif
 								swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 

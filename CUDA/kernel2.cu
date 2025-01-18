@@ -96,10 +96,12 @@ struct SbtRecord {
 struct LaunchParams {
 	unsigned *bitmap;
 	unsigned width;
+	unsigned height;
 
 	float3 O;
 	float3 R, D, F;
-	float FOV;
+	float double_tan_half_fov_x;
+	float double_tan_half_fov_y;
 
 	OptixTraversableHandle traversable;
 
@@ -703,8 +705,11 @@ bool InitializeOptiXRenderer(
 	// *********************************************************************************************
 
 	params_OptiX.width = params.w; // !!! !!! !!!
+	params_OptiX.height = params.h; // !!! !!! !!!
+	params_OptiX.double_tan_half_fov_x = params.double_tan_half_fov_x; // !!! !!! !!!
+	params_OptiX.double_tan_half_fov_y = params.double_tan_half_fov_y; // !!! !!! !!!
 
-	error_CUDA = cudaMalloc(&params_OptiX.bitmap_out_device, sizeof(unsigned) * params_OptiX.width * params_OptiX.width);
+	error_CUDA = cudaMalloc(&params_OptiX.bitmap_out_device, sizeof(unsigned) * params_OptiX.width * params_OptiX.height);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	params_OptiX.bitmap_out_host = (unsigned *)params.bitmap; // !!! !!! !!!
@@ -754,7 +759,7 @@ bool InitializeOptiXOptimizer(
 ) {
 	cudaError_t error_CUDA;
 
-	error_CUDA = cudaMalloc(&params_OptiX.bitmap_ref, sizeof(unsigned) * params_OptiX.width * params_OptiX.width * params.NUMBER_OF_POSES);
+	error_CUDA = cudaMalloc(&params_OptiX.bitmap_ref, sizeof(unsigned) * params_OptiX.width * params_OptiX.height * params.NUMBER_OF_POSES);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_1, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians);
@@ -772,7 +777,7 @@ bool InitializeOptiXOptimizer(
 	error_CUDA = cudaMalloc(&params_OptiX.loss_device, sizeof(double) * 1);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.Gaussians_indices, sizeof(int) * max_Gaussians_per_ray_host * params_OptiX.width * params_OptiX.width);
+	error_CUDA = cudaMalloc(&params_OptiX.Gaussians_indices, sizeof(int) * max_Gaussians_per_ray_host * params_OptiX.width * params_OptiX.height);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	error_CUDA = cudaMalloc(&params_OptiX.m11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
@@ -807,7 +812,7 @@ bool InitializeOptiXOptimizer(
 
 	// ************************************************************************************************
 
-	error_CUDA = cudaMemcpy(params_OptiX.bitmap_ref, params.bitmap_ref, sizeof(unsigned) * params_OptiX.width * params_OptiX.width * params.NUMBER_OF_POSES, cudaMemcpyHostToDevice);
+	error_CUDA = cudaMemcpy(params_OptiX.bitmap_ref, params.bitmap_ref, sizeof(unsigned) * params_OptiX.width * params_OptiX.height * params.NUMBER_OF_POSES, cudaMemcpyHostToDevice);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	// ************************************************************************************************
@@ -886,8 +891,8 @@ bool InitializeOptiXOptimizer(
 	const int kernel_radius = kernel_size >> 1;
 	const REAL_G sigma = ((REAL_G)1.5);
 
-	int arraySizeReal = (params_OptiX.width + (kernel_size - 1)) * (params_OptiX.width + (kernel_size - 1)); // !!! !!! !!!
-	int arraySizeComplex = (((params_OptiX.width + (kernel_size - 1)) >> 1) + 1) * (params_OptiX.width + (kernel_size - 1)); // !!! !!! !!!
+	int arraySizeReal = (params_OptiX.width + (kernel_size - 1)) * (params_OptiX.height + (kernel_size - 1)); // !!! !!! !!!
+	int arraySizeComplex = (((params_OptiX.width + (kernel_size - 1)) >> 1) + 1) * (params_OptiX.height + (kernel_size - 1)); // !!! !!! !!!
 
 	REAL_G *buf;
 	buf = (REAL_G *)malloc(sizeof(REAL_G) * arraySizeReal);
@@ -897,10 +902,10 @@ bool InitializeOptiXOptimizer(
 
 	// ************************************************************************************************
 
-	error_CUFFT = cufftPlan2d(&params_OptiX.planr2c, params_OptiX.width + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), REAL_TO_COMPLEX_G);
+	error_CUFFT = cufftPlan2d(&params_OptiX.planr2c, params_OptiX.height + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), REAL_TO_COMPLEX_G);
 	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
 
-	error_CUFFT = cufftPlan2d(&params_OptiX.planc2r, params_OptiX.width + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), COMPLEX_TO_REAL_G);
+	error_CUFFT = cufftPlan2d(&params_OptiX.planc2r, params_OptiX.height + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), COMPLEX_TO_REAL_G);
 	if (error_CUFFT != CUFFT_SUCCESS) goto Error;
 
 	// ************************************************************************************************
@@ -1037,9 +1042,9 @@ bool InitializeOptiXOptimizer(
 	// Bufor zosta³ uzupe³niony zerami przy okazji tworzenia kernela Gaussowskiego
 	for (int pose = 0; pose < params.NUMBER_OF_POSES; ++pose) {
 		// R channel
-		for (int i = 0; i < params_OptiX.width; ++i) {
+		for (int i = 0; i < params_OptiX.height; ++i) {
 			for (int j = 0; j < params_OptiX.width; ++j) {
-				unsigned char R = params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.width)) + ((i * params_OptiX.width) + j)] >> 16;
+				unsigned char R = params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.height)) + ((i * params_OptiX.width) + j)] >> 16;
 				buf[(i * (params_OptiX.width + (kernel_size - 1))) + j] = R / ((REAL_G)255.0);
 			}
 		}
@@ -1050,9 +1055,9 @@ bool InitializeOptiXOptimizer(
 		// *** *** *** *** ***
 
 		// G channel
-		for (int i = 0; i < params_OptiX.width; ++i) {
+		for (int i = 0; i < params_OptiX.height; ++i) {
 			for (int j = 0; j < params_OptiX.width; ++j) {
-				unsigned char G = (params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.width)) + ((i * params_OptiX.width) + j)] >> 8) & 255;
+				unsigned char G = (params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.height)) + ((i * params_OptiX.width) + j)] >> 8) & 255;
 				buf[(i * (params_OptiX.width + (kernel_size - 1))) + j] = G / ((REAL_G)255.0);
 			}
 		}
@@ -1063,9 +1068,9 @@ bool InitializeOptiXOptimizer(
 		// *** *** *** *** ***
 
 		// B channel
-		for (int i = 0; i < params_OptiX.width; ++i) {
+		for (int i = 0; i < params_OptiX.height; ++i) {
 			for (int j = 0; j < params_OptiX.width; ++j) {
-				unsigned char B = params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.width)) + ((i * params_OptiX.width) + j)] & 255;
+				unsigned char B = params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.height)) + ((i * params_OptiX.width) + j)] & 255;
 				buf[(i * (params_OptiX.width + (kernel_size - 1))) + j] = B / ((REAL_G)255.0);
 			}
 		}
@@ -1238,11 +1243,13 @@ bool RenderOptiX(SOptiXRenderParams& params_OptiX) {
 	LaunchParams launchParams;
 	launchParams.bitmap = params_OptiX.bitmap_out_device;
 	launchParams.width = params_OptiX.width;
+	launchParams.height = params_OptiX.height;
 	launchParams.O = params_OptiX.O;
 	launchParams.R = params_OptiX.R;
 	launchParams.D = params_OptiX.D;
 	launchParams.F = params_OptiX.F;
-	launchParams.FOV = params_OptiX.FOV;
+	launchParams.double_tan_half_fov_x = params_OptiX.double_tan_half_fov_x;
+	launchParams.double_tan_half_fov_y = params_OptiX.double_tan_half_fov_y;
 	launchParams.traversable = params_OptiX.asHandle;
 	launchParams.GC_part_1 = params_OptiX.GC_part_1_1;
 	launchParams.GC_part_2 = params_OptiX.GC_part_2_1;
@@ -1271,7 +1278,7 @@ bool RenderOptiX(SOptiXRenderParams& params_OptiX) {
 		sizeof(LaunchParams) * 1,
 		params_OptiX.sbt,
 		params_OptiX.width,
-		params_OptiX.width,
+		params_OptiX.height,
 		1
 	);
 	if (error_OptiX != OPTIX_SUCCESS) goto Error;
@@ -1286,7 +1293,7 @@ bool RenderOptiX(SOptiXRenderParams& params_OptiX) {
 		error_CUDA = cudaMemcpy(
 			params_OptiX.bitmap_out_host,
 			params_OptiX.bitmap_out_device,
-			sizeof(unsigned) * params_OptiX.width * params_OptiX.width,
+			sizeof(unsigned) * params_OptiX.width * params_OptiX.height,
 			cudaMemcpyDeviceToHost
 		);
 		if (error_CUDA != cudaSuccess) goto Error;
@@ -1309,12 +1316,17 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 	unsigned i = tid / params_OptiX.width;
 	unsigned j = tid % params_OptiX.width;
 
-	if ((j < params_OptiX.width) && (i < params_OptiX.width)) {
-		REAL3_G d = make_REAL3_G(
-			((REAL_G)-0.5) + ((j + ((REAL_G)0.5)) / params_OptiX.width),
-			((REAL_G)-0.5) + ((i + ((REAL_G)0.5)) / params_OptiX.width),
-			((REAL_G)0.5) / TAN_G(((REAL_G)0.5) * params_OptiX.FOV)
+	if ((j < params_OptiX.width) && (i < params_OptiX.height)) {
+		REAL3_R d = make_REAL3_R(
+			(((REAL_R)-0.5) + ((j + ((REAL_R)0.5)) / params_OptiX.width)) * params_OptiX.double_tan_half_fov_x,
+			(((REAL_R)-0.5) + ((i + ((REAL_R)0.5)) / params_OptiX.height)) * params_OptiX.double_tan_half_fov_y,
+			1,
 		);
+		/*REAL3_G d = make_REAL3_G(
+			((REAL_G)-0.5) + ((j + ((REAL_G)0.5)) / params_OptiX.width),
+			((REAL_G)-0.5) + ((i + ((REAL_G)0.5)) / params_OptiX.height),
+			((REAL_G)0.5) / TAN_G(((REAL_G)0.5) * params_OptiX.FOV)
+		);*/
 		REAL3_G v = make_REAL3_G(
 			MAD_G(params_OptiX.R.x, d.x, MAD_G(params_OptiX.D.x, d.y, params_OptiX.F.x * d.z)),
 			MAD_G(params_OptiX.R.y, d.x, MAD_G(params_OptiX.D.y, d.y, params_OptiX.F.y * d.z)),
@@ -1328,7 +1340,7 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 		REAL_G B = params_OptiX.bitmap_out_B[(i * (params_OptiX.width + 11 - 1)) + j]; // !!! !!! !!!
 
 		const REAL_G tmp0 = 1 / ((REAL_G)255.0); // !!! !!! !!!
-		int color_ref =  params_OptiX.bitmap_ref[(params_OptiX.poseNum * (params_OptiX.width * params_OptiX.width)) + ((i * params_OptiX.width) + j)];
+		int color_ref =  params_OptiX.bitmap_ref[(params_OptiX.poseNum * (params_OptiX.width * params_OptiX.height)) + ((i * params_OptiX.width) + j)];
 		REAL_G B_ref = (color_ref & 255) * tmp0;
 		color_ref = color_ref >> 8;
 		REAL_G G_ref = (color_ref & 255) * tmp0;
@@ -1345,17 +1357,17 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 		
 		REAL_G d_dR_dalpha = MAD_G(
 			1 - ((REAL_G)lambda),
-			(2 * (R - R_ref)) / (3 * params_OptiX.width * params_OptiX.width),
+			(2 * (R - R_ref)) / (3 * params_OptiX.width * params_OptiX.height),
 			((REAL_G)lambda) * params_OptiX.mu_bitmap_out_R[((i + 10) * (params_OptiX.width + 11 - 1)) + (j + 10)]
 		);
 		REAL_G d_dG_dalpha = MAD_G(
 			1 - ((REAL_G)lambda),
-			(2 * (G - G_ref)) / (3 * params_OptiX.width * params_OptiX.width),
+			(2 * (G - G_ref)) / (3 * params_OptiX.width * params_OptiX.height),
 			((REAL_G)lambda) * params_OptiX.mu_bitmap_out_G[((i + 10) * (params_OptiX.width + 11 - 1)) + (j + 10)]
 		);
 		REAL_G d_dB_dalpha = MAD_G(
 			1 - ((REAL_G)lambda),
-			(2 * (B - B_ref)) / (3 * params_OptiX.width * params_OptiX.width),
+			(2 * (B - B_ref)) / (3 * params_OptiX.width * params_OptiX.height),
 			((REAL_G)lambda) * params_OptiX.mu_bitmap_out_B[((i + 10) * (params_OptiX.width + 11 - 1)) + (j + 10)]
 		);
 
@@ -1375,7 +1387,7 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 
 		int GaussInd;
 		while (k < max_Gaussians_per_ray) {
-			GaussInd = params_OptiX.Gaussians_indices[(k * params_OptiX.width * params_OptiX.width) + ((i * params_OptiX.width) + j)]; // !!! !!! !!!
+			GaussInd = params_OptiX.Gaussians_indices[(k * params_OptiX.width * params_OptiX.height) + ((i * params_OptiX.width) + j)]; // !!! !!! !!!
 			++k;
 
 			if (GaussInd == -1) return; // !!! !!! !!!
@@ -1702,7 +1714,7 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 		if ((GaussInd != -1) && (k < max_Gaussians_per_ray)) { // !!! !!! !!!
 			int LastGaussInd = GaussInd;
 			while (k < max_Gaussians_per_ray) {
-				int GaussInd = params_OptiX.Gaussians_indices[(k * params_OptiX.width * params_OptiX.width) + ((i * params_OptiX.width) + j)]; // !!! !!! !!!
+				int GaussInd = params_OptiX.Gaussians_indices[(k * params_OptiX.width * params_OptiX.height) + ((i * params_OptiX.width) + j)]; // !!! !!! !!!
 				++k;
 
 				if (GaussInd == -1) break; // !!! !!! !!!
@@ -3000,8 +3012,8 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 	const int kernel_radius = kernel_size >> 1;
 	const REAL_G sigma = ((REAL_G)1.5);
 
-	int arraySizeReal = (params_OptiX.width + (kernel_size - 1)) * (params_OptiX.width + (kernel_size - 1)); // !!! !!! !!!
-	int arraySizeComplex = (((params_OptiX.width + (kernel_size - 1)) >> 1) + 1) * (params_OptiX.width + (kernel_size - 1)); // !!! !!! !!!
+	int arraySizeReal = (params_OptiX.width + (kernel_size - 1)) * (params_OptiX.height + (kernel_size - 1)); // !!! !!! !!!
+	int arraySizeComplex = (((params_OptiX.width + (kernel_size - 1)) >> 1) + 1) * (params_OptiX.height + (kernel_size - 1)); // !!! !!! !!!
 
 	cufftResult error_CUFFT;
 
@@ -3011,9 +3023,9 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 	// Bufor zosta³ uzupe³niony zerami przy okazji tworzenia kernela Gaussowskiego
 	/*for (int pose = 0; pose < params.NUMBER_OF_POSES; ++pose) {
 		// R channel
-		for (int i = 0; i < params_OptiX.width; ++i) {
+		for (int i = 0; i < params_OptiX.height; ++i) {
 			for (int j = 0; j < params_OptiX.width; ++j) {
-				unsigned char R = params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.width)) + ((i * params_OptiX.width) + j)] >> 16;
+				unsigned char R = params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.height)) + ((i * params_OptiX.width) + j)] >> 16;
 				buf[(i * (params_OptiX.width + (kernel_size - 1))) + j] = R / ((REAL_G)255.0);
 			}
 		}
@@ -3024,9 +3036,9 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		// *** *** *** *** ***
 
 		// G channel
-		for (int i = 0; i < params_OptiX.width; ++i) {
+		for (int i = 0; i < params_OptiX.height; ++i) {
 			for (int j = 0; j < params_OptiX.width; ++j) {
-				unsigned char G = (params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.width)) + ((i * params_OptiX.width) + j)] >> 8) & 255;
+				unsigned char G = (params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.height)) + ((i * params_OptiX.width) + j)] >> 8) & 255;
 				buf[(i * (params_OptiX.width + (kernel_size - 1))) + j] = G / ((REAL_G)255.0);
 			}
 		}
@@ -3037,9 +3049,9 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		// *** *** *** *** ***
 
 		// B channel
-		for (int i = 0; i < params_OptiX.width; ++i) {
+		for (int i = 0; i < params_OptiX.height; ++i) {
 			for (int j = 0; j < params_OptiX.width; ++j) {
-				unsigned char B = params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.width)) + ((i * params_OptiX.width) + j)] & 255;
+				unsigned char B = params.bitmap_ref[(pose * (params_OptiX.width * params_OptiX.height)) + ((i * params_OptiX.width) + j)] & 255;
 				buf[(i * (params_OptiX.width + (kernel_size - 1))) + j] = B / ((REAL_G)255.0);
 			}
 		}
@@ -3049,9 +3061,9 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 	}*/
 
 	UnpackImage<<<(arraySizeReal + 255) >> 8, 256>>>(
-		params_OptiX.bitmap_ref + (params_OptiX.poseNum * params_OptiX.width * params_OptiX.width),
+		params_OptiX.bitmap_ref + (params_OptiX.poseNum * params_OptiX.width * params_OptiX.height),
 		params_OptiX.bitmap_ref_R, params_OptiX.bitmap_ref_G, params_OptiX.bitmap_ref_B,
-		params_OptiX.width, params_OptiX.width, kernel_size
+		params_OptiX.width, params_OptiX.height, kernel_size
 	);
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
@@ -3408,7 +3420,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		params_OptiX.mu_bitmap_out_B, params_OptiX.mu_bitmap_out_bitmap_ref_B, params_OptiX.mu_bitmap_out_B_square,
 		// !!! !!! !!!
 
-		params_OptiX.width + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), kernel_radius
+		params_OptiX.width + (kernel_size - 1), params_OptiX.height + (kernel_size - 1), kernel_radius
 	);
 #else
 	ComputeArraysForGradientComputation<<<(arraySizeReal + 255) >> 8, 256>>>(
@@ -3430,7 +3442,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		params_OptiX.mu_bitmap_out_B, params_OptiX.mu_bitmap_out_bitmap_ref_B, params_OptiX.mu_bitmap_out_B_square,
 		// !!! !!! !!!
 
-		params_OptiX.width + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), kernel_radius
+		params_OptiX.width + (kernel_size - 1), params_OptiX.height + (kernel_size - 1), kernel_radius
 	);
 #endif
 	error_CUDA = cudaGetLastError();
@@ -3577,7 +3589,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		params_OptiX.mu_bitmap_out_R, params_OptiX.mu_bitmap_out_G, params_OptiX.mu_bitmap_out_B,
 		// !!! !!! !!!
 
-		params_OptiX.width + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), kernel_size
+		params_OptiX.width + (kernel_size - 1), params_OptiX.height + (kernel_size - 1), kernel_size
 	);
 #else
 	ComputeGradientSSIM<<<(arraySizeReal + 255) >> 8, 256>>>(
@@ -3597,7 +3609,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		params_OptiX.mu_bitmap_out_R, params_OptiX.mu_bitmap_out_G, params_OptiX.mu_bitmap_out_B,
 		// !!! !!! !!!
 
-		params_OptiX.width + (kernel_size - 1), params_OptiX.width + (kernel_size - 1), kernel_size
+		params_OptiX.width + (kernel_size - 1), params_OptiX.height + (kernel_size - 1), kernel_size
 	);
 #endif
 	error_CUDA = cudaGetLastError();
@@ -3610,13 +3622,13 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		REAL_G *buf = NULL;
 		buf = (REAL_G *)malloc(sizeof(REAL_G) * arraySizeReal);
 		if (buf == NULL) goto Error;
-		unsigned *bitmap_ref = (unsigned *)malloc(sizeof(unsigned) * params_OptiX.width * params_OptiX.width);
+		unsigned *bitmap_ref = (unsigned *)malloc(sizeof(unsigned) * params_OptiX.width * params_OptiX.height);
 
 		// R channel
 		error_CUDA = cudaMemcpy(buf, params_OptiX.mu_bitmap_out_R, sizeof(REAL_G) * arraySizeReal, cudaMemcpyDeviceToHost);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		for (int i = 0; i < params_OptiX.width; ++i) {
+		for (int i = 0; i < params_OptiX.height; ++i) {
 			for (int j = 0; j < params_OptiX.width; ++j) {
 				REAL_G Rf = buf[((kernel_radius + i) * (params_OptiX.width + (kernel_size - 1))) + (kernel_radius + j)] / arraySizeReal;
 				if (Rf < ((REAL_G)0.0)) Rf = ((REAL_G)0.0);
@@ -3630,7 +3642,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		error_CUDA = cudaMemcpy(buf, params_OptiX.mu_bitmap_out_G, sizeof(REAL_G) *  arraySizeReal, cudaMemcpyDeviceToHost);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		for (int i = 0; i < params_OptiX.width; ++i) {
+		for (int i = 0; i < params_OptiX.height; ++i) {
 			for (int j = 0; j < params_OptiX.width; ++j) {
 				REAL_G Gf = buf[((kernel_radius + i) * (params_OptiX.width + (kernel_size - 1))) + (kernel_radius + j)] / arraySizeReal;
 				if (Gf < ((REAL_G)0.0)) Gf = ((REAL_G)0.0);
@@ -3644,7 +3656,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		error_CUDA = cudaMemcpy(buf, params_OptiX.mu_bitmap_out_B, sizeof(REAL_G) *  arraySizeReal, cudaMemcpyDeviceToHost);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		for (int i = 0; i < params_OptiX.width; ++i) {
+		for (int i = 0; i < params_OptiX.height; ++i) {
 			for (int j = 0; j < params_OptiX.width; ++j) {
 				REAL_G Bf = buf[((kernel_radius + i) * (params_OptiX.width + (kernel_size - 1))) + (kernel_radius + j)] / arraySizeReal;
 				if (Bf < ((REAL_G)0.0)) Bf = ((REAL_G)0.0);
@@ -3655,21 +3667,21 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 		}
 
 		// Copy to bitmap on hdd
-		unsigned char *foo = (unsigned char *)malloc(3 * params_OptiX.width * params_OptiX.width);
-		for (int i = 0; i < params_OptiX.width; ++i) {
+		unsigned char *foo = (unsigned char *)malloc(3 * params_OptiX.width * params_OptiX.height);
+		for (int i = 0; i < params_OptiX.height; ++i) {
 			for (int j = 0; j < params_OptiX.width; ++j) {
 				unsigned char R = bitmap_ref[(i * params_OptiX.width) + j] >> 16;
 				unsigned char G = (bitmap_ref[(i * params_OptiX.width) + j] >> 8) & 255;
 				unsigned char B = bitmap_ref[(i * params_OptiX.width) + j] & 255;
-				foo[((((params_OptiX.width - 1 - i) * params_OptiX.width) + j) * 3) + 2] = R;
-				foo[((((params_OptiX.width - 1 - i) * params_OptiX.width) + j) * 3) + 1] = G;
-				foo[(((params_OptiX.width - 1 - i) * params_OptiX.width) + j) * 3] = B;		
+				foo[((((params_OptiX.width - 1 - i) * params_OptiX.height) + j) * 3) + 2] = R;
+				foo[((((params_OptiX.width - 1 - i) * params_OptiX.height) + j) * 3) + 1] = G;
+				foo[(((params_OptiX.width - 1 - i) * params_OptiX.height) + j) * 3] = B;		
 			}
 		}
 
 		FILE *f = fopen("test.bmp", "rb+");
 		fseek(f, 54, SEEK_SET);
-		fwrite(foo, sizeof(int) * params_OptiX.width * params_OptiX.width, 1, f);
+		fwrite(foo, sizeof(int) * params_OptiX.width * params_OptiX.height, 1, f);
 		fclose(f);
 
 		free(buf);
@@ -3678,7 +3690,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 
 	//***********************************************************************************************
 
-	ComputeGradient<<<((params_OptiX.width * params_OptiX.width) + 63) >> 6, 64>>>(params_OptiX);
+	ComputeGradient<<<((params_OptiX.width * params_OptiX.height) + 63) >> 6, 64>>>(params_OptiX);
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -4259,10 +4271,12 @@ struct SOptiXRenderParamsMesh {
 struct LaunchParamsMesh {
 	unsigned *bitmap;
 	unsigned width;
+	unsigned height;
 
 	float3 O;
 	float3 R, D, F;
-	float FOV;
+	float double_tan_half_fov_x;
+	float double_tan_half_fov_y;
 
 	OptixTraversableHandle traversable;
 
@@ -5040,8 +5054,11 @@ bool InitializeOptiXRendererMesh(
 	// *********************************************************************************************
 
 	params_OptiX.width = params.w; // !!! !!! !!!
+	params_OptiX.height = params.h; // !!! !!! !!!
+	params_OptiX.double_tan_half_fov_x = params.double_tan_half_fov_x; // !!! !!! !!!
+	params_OptiX.double_tan_half_fov_y = params.double_tan_half_fov_y; // !!! !!! !!!
 
-	error_CUDA = cudaMalloc(&params_OptiX.bitmap_out_device, sizeof(unsigned) * params_OptiX.width * params_OptiX.width);
+	error_CUDA = cudaMalloc(&params_OptiX.bitmap_out_device, sizeof(unsigned) * params_OptiX.width * params_OptiX.height);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	params_OptiX.bitmap_out_host = (unsigned *)params.bitmap; // !!! !!! !!!
@@ -5066,11 +5083,13 @@ bool RenderOptiXMesh(SOptiXRenderParams& params_OptiX, SOptiXRenderParamsMesh &p
 	LaunchParamsMesh launchParams;
 	launchParams.bitmap = params_OptiX.bitmap_out_device;
 	launchParams.width = params_OptiX.width;
+	launchParams.height = params_OptiX.height;
 	launchParams.O = params_OptiX.O;
 	launchParams.R = params_OptiX.R;
 	launchParams.D = params_OptiX.D;
 	launchParams.F = params_OptiX.F;
-	launchParams.FOV = params_OptiX.FOV;
+	launchParams.double_tan_half_fov_x = params_OptiX.double_tan_half_fov_x;
+	launchParams.double_tan_half_fov_y = params_OptiX.double_tan_half_fov_y;
 	launchParams.traversable = params_OptiX.asHandle;
 	launchParams.GC_part_1 = params_OptiX.GC_part_1_1;
 	launchParams.GC_part_2 = params_OptiX.GC_part_2_1;
@@ -5102,7 +5121,7 @@ bool RenderOptiXMesh(SOptiXRenderParams& params_OptiX, SOptiXRenderParamsMesh &p
 		sizeof(LaunchParamsMesh) * 1,
 		params_OptiX.sbt,
 		params_OptiX.width,
-		params_OptiX.width,
+		params_OptiX.height,
 		1
 	);
 	if (error_OptiX != OPTIX_SUCCESS) goto Error;
@@ -5117,7 +5136,7 @@ bool RenderOptiXMesh(SOptiXRenderParams& params_OptiX, SOptiXRenderParamsMesh &p
 		error_CUDA = cudaMemcpy(
 			params_OptiX.bitmap_out_host,
 			params_OptiX.bitmap_out_device,
-			sizeof(unsigned) * params_OptiX.width * params_OptiX.width,
+			sizeof(unsigned) * params_OptiX.width * params_OptiX.height,
 			cudaMemcpyDeviceToHost
 		);
 		if (error_CUDA != cudaSuccess) goto Error;

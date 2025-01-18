@@ -88,24 +88,24 @@ bool DumpParameters(SOptiXRenderParams& params_OptiX) {
 	if (error_CUDA != cudaSuccess) goto Error;
 	DumpToFile("dump/save", params_OptiX.epoch, "params4", buf, sizeof(REAL2_G) * params_OptiX.numberOfGaussians);
 
-	int *foo = (int *)malloc(sizeof(int) * params_OptiX.width * params_OptiX.width * dlugosc_promienia);
-	error_CUDA = cudaMemcpy(foo, params_OptiX.Gaussians_indices, sizeof(int) * params_OptiX.width * params_OptiX.width * dlugosc_promienia, cudaMemcpyDeviceToHost);
+	int *foo = (int *)malloc(sizeof(int) * params_OptiX.width * params_OptiX.height * dlugosc_promienia);
+	error_CUDA = cudaMemcpy(foo, params_OptiX.Gaussians_indices, sizeof(int) * params_OptiX.width * params_OptiX.height * dlugosc_promienia, cudaMemcpyDeviceToHost);
 	if (error_CUDA != cudaSuccess) goto Error;
-	for (int i = 0; i < params_OptiX.width; ++i) {
+	for (int i = 0; i < params_OptiX.height; ++i) {
 		for (int j = 0; j < params_OptiX.width; ++j) {
 			int k = 0;
 			int ind;
 			do {
-				ind = foo[(k * (params_OptiX.width * params_OptiX.width)) + (i * params_OptiX.width) + j];
+				ind = foo[(k * (params_OptiX.width * params_OptiX.height)) + (i * params_OptiX.width) + j];
 				++k;
 			} while ((ind != -1) && (k < MAX_RAY_LENGTH));
 			while (k < MAX_RAY_LENGTH) {
-				foo[(k * (params_OptiX.width * params_OptiX.width)) + (i * params_OptiX.width) + j] = -1;
+				foo[(k * (params_OptiX.width * params_OptiX.height)) + (i * params_OptiX.width) + j] = -1;
 				++k;
 			}
 		}
 	}
-	DumpToFile("dump/save", params_OptiX.epoch, "indices", foo, sizeof(int) * params_OptiX.width * params_OptiX.width * dlugosc_promienia);
+	DumpToFile("dump/save", params_OptiX.epoch, "indices", foo, sizeof(int) * params_OptiX.width * params_OptiX.height * dlugosc_promienia);
 	free(foo);*/
 
 	// *** *** *** *** ***

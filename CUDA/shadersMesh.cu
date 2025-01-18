@@ -17,10 +17,12 @@ struct STriangleComponent {
 struct LaunchParamsMesh {
 	unsigned *bitmap;
 	unsigned width;
+	unsigned height;
 
 	float3 O;
 	float3 R, D, F;
-	float FOV;
+	float double_tan_half_fov_x;
+	float double_tan_half_fov_y;
 
 	OptixTraversableHandle traversable;
 
@@ -56,10 +58,15 @@ extern "C" __global__ void __raygen__renderFrame() {
 	int pixel_ind = (y * optixLaunchParams.width) + x;
 
 	float3 d = make_float3(
-		-0.5f + ((x + 0.5f) / optixLaunchParams.width),
-		-0.5f + ((y + 0.5f) / optixLaunchParams.width),
-		0.5f / tanf(0.5f * optixLaunchParams.FOV)
+		(-0.5f + ((x + 0.5f) / optixLaunchParams.width)) * optixLaunchParams.double_tan_half_fov_x,
+		(-0.5f + ((y + 0.5f) / optixLaunchParams.height)) * optixLaunchParams.double_tan_half_fov_y,
+		1.0f
 	);
+	/*float3 d = make_float3(
+		-0.5f + ((x + 0.5f) / optixLaunchParams.width),
+		-0.5f + ((y + 0.5f) / optixLaunchParams.height),
+		0.5f / tanf(0.5f * optixLaunchParams.FOV)
+	);*/
 	float3 v = make_float3(
 		__fmaf_rn(optixLaunchParams.R.x, d.x, __fmaf_rn(optixLaunchParams.D.x, d.y, optixLaunchParams.F.x * d.z)),
 		__fmaf_rn(optixLaunchParams.R.y, d.x, __fmaf_rn(optixLaunchParams.D.y, d.y, optixLaunchParams.F.y * d.z)),
@@ -275,7 +282,7 @@ extern "C" __global__ void __closesthit__radiance() {
 		
 		// *** *** *** *** ***
 
-		for (int i = 1; i < 1024; ++i) {
+		for (int i = 1; i < 128; ++i) {
 			R_as_uint = __float_as_uint(0.0f);
 			G_as_uint = __float_as_uint(0.0f);
 			B_as_uint = __float_as_uint(0.0f);
