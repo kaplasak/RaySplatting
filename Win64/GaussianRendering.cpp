@@ -1047,11 +1047,16 @@ bool result;
 	} else {
 		#ifdef VISUALIZATION
 			// LOAD FROM SAVED PARAMS
+			
+			// lego
+			/*
 			C3DScene *scene = new C3DScene();
 			int fCntOld = scene->fCnt;
 			int vCntOld = scene->vCnt;
 			int nCntOld = scene->nCnt;
 			scene->LoadOBJFile("dragon_vrip.obj", 0);
+
+			// *** *** *** *** ***
 
 			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
 
@@ -1071,7 +1076,114 @@ bool result;
 			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
 
 			m = CMat4Df::Translation(CVec3Df(0.0f, -0.75f, 0.1f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);*/
+
+			// *** *** *** *** ***
+
+			// garden
+			C3DScene *scene = new C3DScene();
+
+			// *** *** *** *** ***
+			
+			int fCntOld = scene->fCnt;
+			int vCntOld = scene->vCnt;
+			int nCntOld = scene->nCnt;
+			scene->LoadOBJFile("dragon_vrip.obj", 0);
+
+			// *** *** *** *** ***
+
+			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			CMat4Df m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
 			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * 0.125f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(-0.35f, 0.8f, 1.55f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
+
+			fCntOld = scene->fCnt;
+			vCntOld = scene->vCnt;
+			nCntOld = scene->nCnt;
+			scene->LoadOBJFile("bun_zipper.obj", 0);
+
+			// *** *** *** *** ***
+
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * 0.375f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(-0.15f, 1.5f, 0.25f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
+			
+			fCntOld = scene->fCnt;
+			vCntOld = scene->vCnt;
+			nCntOld = scene->nCnt;
+			scene->LoadOBJFile("lucy.obj", 0);
+
+			// *** *** *** *** ***
+
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.lB, sceneBounds.uB, sceneBounds.bB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(0.001f, 0.001f, 0.001f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.325f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(1.25f, 0.6f, 1.0f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
 
 			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
 

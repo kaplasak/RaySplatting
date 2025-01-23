@@ -210,7 +210,7 @@ extern "C" __global__ void __closesthit__radiance() {
 	struct SLight {
 		float3 O;
 		float R, G, B;
-	} lights[lightsNum] = { make_float3(0.0f, -20.0f, 10.0f), 10000.0f, 10000.0f, 10000.0f };
+	} lights[lightsNum] = { make_float3(200.0f, 0.0f, -200.0f), 10000.0f, 10000.0f, 10000.0f };
 	// !!! !!! !!!
 
 	// *********************************************************************************************
@@ -289,6 +289,8 @@ extern "C" __global__ void __closesthit__radiance() {
 			alpha_as_uint = __float_as_uint(1.0f);
 			run_from_CH_for_Gaussians = 1;
 
+			t_as_uint = __float_as_uint(INFINITY);
+
 			optixTrace(
 				optixLaunchParams.traversable,
 				optixGetWorldRayOrigin(),
@@ -314,49 +316,55 @@ extern "C" __global__ void __closesthit__radiance() {
 
 			// *** *** *** *** ***
 
-			unsigned R_as_uint_tmp = R_as_uint; // !!! !!! !!!
-			unsigned G_as_uint_tmp = G_as_uint; // !!! !!! !!!
-			unsigned B_as_uint_tmp = B_as_uint; // !!! !!! !!!
+			if (t != INFINITY) {
+				unsigned R_as_uint_tmp = R_as_uint; // !!! !!! !!!
+				unsigned G_as_uint_tmp = G_as_uint; // !!! !!! !!!
+				unsigned B_as_uint_tmp = B_as_uint; // !!! !!! !!!
 
-			O_prim = make_float3(
-				__fmaf_rn(v.x, t, O.x),
-				__fmaf_rn(v.y, t, O.y),
-				__fmaf_rn(v.z, t, O.z)
-			);
-			v_prim = make_float3(
-				lights[0].O.x - O_prim.x,
-				lights[0].O.y - O_prim.y,
-				lights[0].O.z - O_prim.z
-			);
-			v_prim_norm_inv = __frsqrt_rn(__fmaf_rn(v_prim.x, v_prim.x, __fmaf_rn(v_prim.y, v_prim.y, v_prim.z * v_prim.z)));
-			v_prim.x *= v_prim_norm_inv; v_prim.y *= v_prim_norm_inv; v_prim.z *= v_prim_norm_inv;
+				O_prim = make_float3(
+					__fmaf_rn(v.x, t, O.x),
+					__fmaf_rn(v.y, t, O.y),
+					__fmaf_rn(v.z, t, O.z)
+				);
+				v_prim = make_float3(
+					lights[0].O.x - O_prim.x,
+					lights[0].O.y - O_prim.y,
+					lights[0].O.z - O_prim.z
+				);
+				v_prim_norm_inv = __frsqrt_rn(__fmaf_rn(v_prim.x, v_prim.x, __fmaf_rn(v_prim.y, v_prim.y, v_prim.z * v_prim.z)));
+				v_prim.x *= v_prim_norm_inv; v_prim.y *= v_prim_norm_inv; v_prim.z *= v_prim_norm_inv;
 			
-			t_as_uint = __float_as_uint(0.0f);
+				t_as_uint = __float_as_uint(0.0f);
 
-			optixTrace(
-				optixLaunchParams.traversable_tri,
-				O_prim,
-				v_prim,
-				0.0001f, // tmin
-				INFINITY, // tmax
-				0.0f, // rayTime
-				OptixVisibilityMask(255),
-				OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT,
-				0,
-				1,
-				0,
+				optixTrace(
+					optixLaunchParams.traversable_tri,
+					O_prim,
+					v_prim,
+					0.0001f, // tmin
+					INFINITY, // tmax
+					0.0f, // rayTime
+					OptixVisibilityMask(255),
+					OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT,
+					0,
+					1,
+					0,
 
-				t_as_uint,
-				R_as_uint, G_as_uint, B_as_uint,
-				alpha_as_uint,
-				run_from_CH_for_Gaussians,
-				recursion_depth
-			);
+					t_as_uint,
+					R_as_uint, G_as_uint, B_as_uint,
+					alpha_as_uint,
+					run_from_CH_for_Gaussians,
+					recursion_depth
+				);
 			
-			tmp = ((__uint_as_float(t_as_uint) != INFINITY) ? (0.25f * T) : T);
-			R = __fmaf_rn(tmp, __uint_as_float(R_as_uint_tmp), R);
-			G = __fmaf_rn(tmp, __uint_as_float(G_as_uint_tmp), G);
-			B = __fmaf_rn(tmp, __uint_as_float(B_as_uint_tmp), B);
+				tmp = ((__uint_as_float(t_as_uint) != INFINITY) ? (0.25f * T) : T);
+				R = __fmaf_rn(tmp, __uint_as_float(R_as_uint_tmp), R);
+				G = __fmaf_rn(tmp, __uint_as_float(G_as_uint_tmp), G);
+				B = __fmaf_rn(tmp, __uint_as_float(B_as_uint_tmp), B);
+			} else {
+				R = __fmaf_rn(T, __uint_as_float(R_as_uint), R);
+				G = __fmaf_rn(T, __uint_as_float(G_as_uint), G);
+				B = __fmaf_rn(T, __uint_as_float(B_as_uint), B);
+			}
 			
 			// *** *** *** *** ***
 

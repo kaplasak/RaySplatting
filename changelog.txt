@@ -1,4 +1,2 @@
-- Fixed the bitmap loading error for the images for which the triple of width is not divisible by 4 by implementing the appropriate padding;
-- Added support for the arbitrary width to height ratios of the training / test images (not necessarily equal);
-- Added the partial support of the COLMAP data sets;
-- Added new parameter "data_format" in the config file;
+- Improved the memory management during the visualization phase;
+- Fixed the error in the shading model (during the visualization phase) that led to the incorrect calculation of the shadows;

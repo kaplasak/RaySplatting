@@ -382,7 +382,10 @@ bool InitializeOptiXRenderer(
 
 	if (!loadFromFile) {
 		params_OptiX.numberOfGaussians = params.numberOfGaussians; // !!! !!! !!!
-		params_OptiX.maxNumberOfGaussians = params_OptiX.numberOfGaussians * 2.25f; // !!! !!! !!!
+		if ((epoch + 1 <= densification_end_epoch_host) && (params_OptiX.numberOfGaussians <= max_Gaussians_per_model_host)) // !!! !!! !!!
+			params_OptiX.maxNumberOfGaussians = params_OptiX.numberOfGaussians * 2.25f; // !!! !!! !!!
+		else
+			params_OptiX.maxNumberOfGaussians = params_OptiX.numberOfGaussians;
 	} else {
 		FILE *f;
 
@@ -394,7 +397,10 @@ bool InitializeOptiXRenderer(
 		params_OptiX.numberOfGaussians = ftell(f) / sizeof(float4); // !!! !!! !!!
 		fclose(f);
 
-		params_OptiX.maxNumberOfGaussians = params_OptiX.numberOfGaussians * 2.25f; // !!! !!! !!!
+		if ((epoch + 1 <= densification_end_epoch_host) && (params_OptiX.numberOfGaussians <= max_Gaussians_per_model_host)) // !!! !!! !!!
+			params_OptiX.maxNumberOfGaussians = params_OptiX.numberOfGaussians * 2.25f; // !!! !!! !!!
+		else
+			params_OptiX.maxNumberOfGaussians = params_OptiX.numberOfGaussians;
 	}
 
 	// *********************************************************************************************
@@ -4837,11 +4843,11 @@ bool InitializeOptiXRendererMesh(
 	emitDesc.type   = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
 	emitDesc.result = (CUdeviceptr)params_OptiX.compactedSizeBuffer;
 
-	params_OptiX.tempBufferSize = blasBufferSizes.tempSizeInBytes * 2; // !!! !!! !!!
+	params_OptiX.tempBufferSize = blasBufferSizes.tempSizeInBytes; // !!! !!! !!!
 	error_CUDA = cudaMalloc(&params_OptiX.tempBuffer, params_OptiX.tempBufferSize);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	params_OptiX.outputBufferSize = blasBufferSizes.outputSizeInBytes * 2; // !!! !!! !!!
+	params_OptiX.outputBufferSize = blasBufferSizes.outputSizeInBytes; // !!! !!! !!!
 	error_CUDA = cudaMalloc(&params_OptiX.outputBuffer, params_OptiX.outputBufferSize);
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -4871,7 +4877,7 @@ bool InitializeOptiXRendererMesh(
 	error_CUDA = cudaMemcpy(&compactedSize, params_OptiX.compactedSizeBuffer, 8, cudaMemcpyDeviceToHost);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	params_OptiX.asBufferSize = compactedSize * 2; // !!! !!! !!! 
+	params_OptiX.asBufferSize = compactedSize; // !!! !!! !!! 
 	error_CUDA = cudaMalloc(&params_OptiX.asBuffer, params_OptiX.asBufferSize);
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -4887,6 +4893,12 @@ bool InitializeOptiXRendererMesh(
 
 	cudaDeviceSynchronize();
 	error_CUDA = cudaGetLastError();
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaFree(params_OptiX.tempBuffer); // !!! !!! !!!
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaFree(params_OptiX.outputBuffer); // !!! !!! !!!
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	/**********************************************************************************************/
