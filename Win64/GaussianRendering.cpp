@@ -107,7 +107,7 @@ void Dump(const char* fName, void* ptr, int size) {
 
 //   -*-   -*-   -*-   -*-   -*-
 
-void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &numberOfPoses, SCamera *&poses, int *&bitmap) {
+void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &numberOfPoses, SCamera *&poses, int *&bitmap, char **&img_names) {
 	FILE *f;
 
 	// *** *** *** *** ***
@@ -127,6 +127,7 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 	
 	poses = (SCamera*)malloc(sizeof(SCamera) * numberOfPoses);
 	void *bitmap_tmp = NULL;
+	img_names = (char **)malloc(sizeof(char *) * numberOfPoses); // !!! !!! !!!
 
 	int poseNum = 0;
 	fseek(f, 0, SEEK_SET);
@@ -145,6 +146,8 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 
 			char *next ;
 			char *tmp = strtok_s(fileName, "\"", &next);
+			img_names[poseNum] = (char *)malloc(sizeof(char) * (strlen(tmp) + 1));
+			strcpy_s(img_names[poseNum], strlen(tmp) + 1, tmp);
 
 			FILE *f_bitmap;
 			strcpy_s(filePath, dataPath);
@@ -278,6 +281,9 @@ SCamera *poses_test;
 
 int *bitmap_ref;
 int *bitmap_ref_test;
+
+char **img_names; // !!! !!! !!!
+char **img_names_test; // !!! !!! !!!
 
 int NUMBER_OF_GAUSSIANS = 372590;
 int poseNum_rendering = 0;
@@ -530,6 +536,8 @@ void LoadSceneAndCameraCOLMAP(
 	SCamera *&poses_test,
 	int *&bitmap_train,
 	int *&bitmap_test,
+	char **&img_names,
+	char **&img_names_test,
 	int &bitmapWidth, int &bitmapHeight,
 	float &double_tan_half_fov_x, float &double_tan_half_fov_y
 ) {
@@ -567,6 +575,9 @@ void LoadSceneAndCameraCOLMAP(
 	poses_train = (SCamera*)malloc(sizeof(SCamera) * numberOfPoses_train);
 	poses_test = (SCamera*)malloc(sizeof(SCamera) * numberOfPoses_test);
 	
+	img_names = (char **)malloc(sizeof(char *) * numberOfPoses_train); // !!! !!! !!!
+	img_names_test = (char **)malloc(sizeof(char *) * numberOfPoses_test); // !!! !!! !!!
+
 	void *bitmap_tmp = NULL;
 
 	tmp1 = buf;
@@ -601,6 +612,15 @@ void LoadSceneAndCameraCOLMAP(
 			numberOfPoses_train = 0; // !!! !!! !!!
 			numberOfPoses_test = 0; // !!! !!! !!!
 		}
+
+		if ((poseNum & 7) != 0) {
+			img_names[numberOfPoses_train] = (char *)malloc(sizeof(char) * (strlen(fName) + 1));
+			strcpy_s(img_names[numberOfPoses_train], strlen(fName) + 1, fName);
+		} else {
+			img_names_test[numberOfPoses_test] = (char *)malloc(sizeof(char) * (strlen(fName) + 1));
+			strcpy_s(img_names_test[numberOfPoses_test], strlen(fName) + 1, fName);
+		}
+
 		fseek(f_bitmap, 54, SEEK_SET);
 		fread(bitmap_tmp, scanLineSize * bitmapHeight, 1, f_bitmap);
 		for (int i = 0; i < bitmapHeight; ++i) {
@@ -701,16 +721,18 @@ void PrepareScene() {
 			poses_test,
 			bitmap_ref,
 			bitmap_ref_test,
+			img_names,
+			img_names_test,
 			bitmapWidth, bitmapHeight,
 			double_tan_half_fov_x, double_tan_half_fov_y
 		); // !!! !!! !!!
 	else {
 		if (strcmp(config.learning_phase, "training") == 0) {
-			LoadSceneAndCamera(config.data_path, "transforms_train.json", NUMBER_OF_POSES, poses, bitmap_ref); // !!! !!! !!!
-			LoadSceneAndCamera(config.data_path, "transforms_test.json", NUMBER_OF_POSES_TEST, poses_test, bitmap_ref_test); // !!! !!! !!!
+			LoadSceneAndCamera(config.data_path, "transforms_train.json", NUMBER_OF_POSES, poses, bitmap_ref, img_names); // !!! !!! !!!
+			LoadSceneAndCamera(config.data_path, "transforms_test.json", NUMBER_OF_POSES_TEST, poses_test, bitmap_ref_test, img_names_test); // !!! !!! !!!
 		} else {
 			if (strcmp(config.learning_phase, "validation") == 0)
-				LoadSceneAndCamera(config.data_path, "transforms_val.json", NUMBER_OF_POSES, poses, bitmap_ref); // !!! !!! !!!
+				LoadSceneAndCamera(config.data_path, "transforms_val.json", NUMBER_OF_POSES, poses, bitmap_ref, img_names); // !!! !!! !!!
 			else
 				PostQuitMessage(0);
 		}
@@ -827,7 +849,7 @@ void PrepareScene() {
 
 	// *** *** *** *** ***
 
-	poseNum_rendering = 2;
+	poseNum_rendering = 76;
 
 	Ox = poses[poseNum_rendering].Ox; Oy = poses[poseNum_rendering].Oy; Oz = poses[poseNum_rendering].Oz;
 	Rx = poses[poseNum_rendering].Rx; Ry = poses[poseNum_rendering].Ry; Rz = poses[poseNum_rendering].Rz;
@@ -1017,6 +1039,7 @@ bool result;
 	//**********************************************************************************************
 
 //#define VISUALIZATION
+//#define TEST_POSES_VISUALIZATION
 
 #ifndef CUDA_RENDERER
 	// Trzeba wywo³ywaæ w pierwszej kolejnoœci, poniewa¿ ustawia maksymaln¹ d³ugoœæ œcie¿ki, która jest wykorzystywana przy inicjalizacji
@@ -1043,7 +1066,7 @@ bool result;
 		swprintf(consoleBuffer, 256, L"Initializing OptiX optimizer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-		epochNumStart = epochNum;
+		epochNumStart = epochNum;		
 	} else {
 		#ifdef VISUALIZATION
 			// LOAD FROM SAVED PARAMS
@@ -1216,6 +1239,86 @@ bool result;
 			epochNumStart = epochNum;
 		#endif
 	}
+
+	// *****************************************************************************************
+
+	// Test poses visualization on startup
+	#if ((defined TEST_POSES_VISUALIZATION) && (!defined VISUALIZATION))
+		if ((strcmp(config.data_format, "colmap") == 0) || (strcmp(config.learning_phase, "validation") != 0)) {
+			char filePath[256];
+
+			if (strcmp(config.data_format, "colmap") != 0) {
+				strcpy_s(filePath, config.data_path);
+				strcat_s(filePath, "/");
+				strcat_s(filePath, img_names_test[0]);
+				strcat_s(filePath, ".bmp");
+			} else {
+				strcpy_s(filePath, config.data_path);
+				strcat_s(filePath, "/images/");
+				strcat_s(filePath, img_names_test[0]);
+				strcat_s(filePath, ".bmp");
+			}
+					   			
+			FILE *f;
+			
+			fopen_s(&f, filePath, "rb+");
+			fseek(f, 0, SEEK_END);
+			int bitmapSize = ftell(f);
+			int scanLineSize = (bitmapSize - 54) / bitmapHeight;
+
+			fseek(f, 0, SEEK_SET);
+			char *bitmap = (char *)malloc(sizeof(char) * bitmapSize);
+			fread(bitmap, bitmapSize, 1, f);
+			fclose(f);
+
+			// *** *** *** *** ***
+
+			for (int pose = 0; pose < NUMBER_OF_POSES_TEST; ++pose) {
+				params_OptiX.O.x = poses_test[pose].Ox; params_OptiX.O.y = poses_test[pose].Oy; params_OptiX.O.z = poses_test[pose].Oz;
+				params_OptiX.R.x = poses_test[pose].Rx; params_OptiX.R.y = poses_test[pose].Ry; params_OptiX.R.z = poses_test[pose].Rz;
+				params_OptiX.D.x = poses_test[pose].Dx; params_OptiX.D.y = poses_test[pose].Dy; params_OptiX.D.z = poses_test[pose].Dz;
+				params_OptiX.F.x = poses_test[pose].Fx; params_OptiX.F.y = poses_test[pose].Fy; params_OptiX.F.z = poses_test[pose].Fz;
+				params_OptiX.copyBitmapToHostMemory = true;
+
+				result = RenderOptiX(params_OptiX);
+
+				// *** *** *** *** ***
+
+				for (int i = 0; i < bitmapHeight; ++i) {
+					for (int j = 0; j < bitmapWidth; ++j) {
+						unsigned color = params_OptiX.bitmap_host[(i * bitmapWidth) + j];
+						unsigned char R = color >> 16;
+						unsigned char G = (color >> 8) & 255;
+						unsigned char B = color & 255;
+						bitmap[54 + (((bitmapHeight - 1 - i) * scanLineSize) + (j * 3))] = B;
+						bitmap[54 + (((bitmapHeight - 1 - i) * scanLineSize) + (j * 3)) + 1] = G;
+						bitmap[54 + (((bitmapHeight - 1 - i) * scanLineSize) + (j * 3)) + 2] = R;
+					}
+				}
+
+				if (strcmp(config.data_format, "colmap") != 0) {
+					strcpy_s(filePath, config.data_path);
+					strcat_s(filePath, "/");
+					strcat_s(filePath, img_names_test[pose]);
+					strcat_s(filePath, "_render.bmp");
+				} else {
+					strcpy_s(filePath, config.data_path);
+					strcat_s(filePath, "/images/");
+					strcat_s(filePath, img_names_test[pose]);
+					strcat_s(filePath, "_render.bmp");
+				}
+
+				fopen_s(&f, filePath, "wb+");
+				fwrite(bitmap, bitmapSize, 1, f);
+				fclose(f);
+
+				swprintf(consoleBuffer, 256, L"TEST POSE: %d;\n", pose + 1);
+				WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			}
+
+			free(bitmap);
+		}
+	#endif
 #endif
 
 	//**********************************************************************************************
@@ -1481,6 +1584,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 					switch (phase) {
 						case 2 : {
+
+							// *** *** *** *** ***
+
 							#ifdef VISUALIZATION
 								if (false) { // !!! !!! !!!
 							#else

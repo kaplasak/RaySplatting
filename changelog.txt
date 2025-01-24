@@ -1,2 +1,1 @@
-- Improved the memory management during the visualization phase;
-- Fixed the error in the shading model (during the visualization phase) that led to the incorrect calculation of the shadows;
+- Added the preprocessor flag TEST_POSES_VISUALIZATION that allows to perform the test set visualization at startup;
