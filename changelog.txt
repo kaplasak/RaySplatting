@@ -1,1 +1,1 @@
-- Added the preprocessor flag TEST_POSES_VISUALIZATION that allows to perform the test set visualization at startup;
+- Added the simple material system for the sake of visualization;

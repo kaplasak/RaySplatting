@@ -1072,8 +1072,17 @@ bool result;
 			// LOAD FROM SAVED PARAMS
 			
 			// lego
-			/*
 			C3DScene *scene = new C3DScene();
+
+			scene->light.Ox = 0.0f;
+			scene->light.Oy = -20.0f;
+			scene->light.Oz	= 10.0f;
+			scene->light.R = 250000.0f; 
+			scene->light.G = 250000.0f;
+			scene->light.B = 250000.0f;
+
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 512.0f, 0.0f, 1.125f});
+
 			int fCntOld = scene->fCnt;
 			int vCntOld = scene->vCnt;
 			int nCntOld = scene->nCnt;
@@ -1099,12 +1108,23 @@ bool result;
 			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
 
 			m = CMat4Df::Translation(CVec3Df(0.0f, -0.75f, 0.1f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);*/
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
 
-			// *** *** *** *** ***
+			// *************************************************************************************
 
 			// garden
-			C3DScene *scene = new C3DScene();
+			/*C3DScene *scene = new C3DScene();
+
+			scene->light.Ox = 200.0f;
+			scene->light.Oy = 0.0f;
+			scene->light.Oz	= -200.0f; 
+			scene->light.R = 100000.0f; 
+			scene->light.G = 100000.0f;
+			scene->light.B = 100000.0f;
+
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 16.0f, 0.75f, 1.125f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 16.0f, 0.75f, 1.125f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 16.0f, 0.75f, 1.125f});
 
 			// *** *** *** *** ***
 			
@@ -1143,7 +1163,7 @@ bool result;
 			fCntOld = scene->fCnt;
 			vCntOld = scene->vCnt;
 			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("bun_zipper.obj", 0);
+			scene->LoadOBJFile("bun_zipper.obj", 1);
 
 			// *** *** *** *** ***
 
@@ -1175,7 +1195,7 @@ bool result;
 			fCntOld = scene->fCnt;
 			vCntOld = scene->vCnt;
 			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("lucy.obj", 0);
+			scene->LoadOBJFile("lucy.obj", 2);
 
 			// *** *** *** *** ***
 
@@ -1215,9 +1235,557 @@ bool result;
 			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
 			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);*/
+
+			// *************************************************************************************
+
+			// bicycle
+			/*C3DScene *scene = new C3DScene();
+
+			scene->light.Ox = 200.0f;
+			scene->light.Oy = 0.0f;
+			scene->light.Oz	= -200.0f; 
+			scene->light.R = 75000.0f; 
+			scene->light.G = 75000.0f;
+			scene->light.B = 75000.0f;
+
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 16.0f, 0.75f, 1.125f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 16.0f, 0.75f, 1.125f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 16.0f, 0.75f, 1.125f});
 
 			// *** *** *** *** ***
+
+			int fCntOld = scene->fCnt;
+			int vCntOld = scene->vCnt;
+			int nCntOld = scene->nCnt;
+			scene->LoadOBJFile("dragon_vrip.obj", 0);
+
+			// *** *** *** *** ***
+
+			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			CMat4Df m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(2.5f, 2.5f, 2.5f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.05f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * 0.05f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * 0.25f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OZRotation(2.0f * M_PI * 0.45f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.025f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(1.0f, 1.075f, -0.5f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
+
+			fCntOld = scene->fCnt;
+			vCntOld = scene->vCnt;
+			nCntOld = scene->nCnt;
+			scene->LoadOBJFile("bun_zipper.obj", 1);
+
+			// *** *** *** *** ***
+
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(2.5f, 2.5f, 2.5f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.05f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * 0.05f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * 0.25f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OZRotation(2.0f * M_PI * 0.45f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.025f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(0.25f, 0.7f, 1.2f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
+
+			fCntOld = scene->fCnt;
+			vCntOld = scene->vCnt;
+			nCntOld = scene->nCnt;
+			scene->LoadOBJFile("lucy.obj", 2);
+
+			// *** *** *** *** ***
+
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(0.0005f, 0.0005f, 0.0005f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.3f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(0.6f, 0.7f, 0.25f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1); */
+
+			// *************************************************************************************
+
+			// room
+			/*C3DScene *scene = new C3DScene();
+
+			scene->light.Ox = 2.0f;
+			scene->light.Oy = -2.0f;
+			scene->light.Oz	= -2.0f; 
+			scene->light.R = 25.0f; 
+			scene->light.G = 25.0f;
+			scene->light.B = 25.0f;
+
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 16.0f, 0.75f, 1.125f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 16.0f, 0.0f, 4.0f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 16.0f, 0.0f, 128.0f});
+
+			// *** *** *** *** ***
+
+			int fCntOld = scene->fCnt;
+			int vCntOld = scene->vCnt;
+			int nCntOld = scene->nCnt;
+			scene->LoadOBJFile("dragon_vrip.obj", 0);
+
+			// *** *** *** *** ***
+
+			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			CMat4Df m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * 0.125f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(-0.4f, 2.4f, 1.85f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
+
+			fCntOld = scene->fCnt;
+			vCntOld = scene->vCnt;
+			nCntOld = scene->nCnt;
+			scene->LoadOBJFile("bun_zipper.obj", 1);
+
+			// *** *** *** *** ***
+
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * 0.375f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(1.15f, 1.8f, 2.9f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
+
+			fCntOld = scene->fCnt;
+			vCntOld = scene->vCnt;
+			nCntOld = scene->nCnt;
+			scene->LoadOBJFile("lucy.obj", 2);
+
+			// *** *** *** *** ***
+
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.lB, sceneBounds.uB, sceneBounds.bB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(0.001f, 0.001f, 0.001f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.325f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(0.85f, 2.25f, 1.2f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);*/
+
+			// *************************************************************************************
+
+			// kitchen
+			/*C3DScene *scene = new C3DScene();
+
+			scene->light.Ox = -2.0f;
+			scene->light.Oy = -4.0f;
+			scene->light.Oz	= -2.0f; 
+			scene->light.R = 25.0f; 
+			scene->light.G = 25.0f;
+			scene->light.B = 25.0f;
+
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 16.0f, 0.75f, 1.125f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 16.0f, 0.0f, 4.0f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 16.0f, 0.0f, 128.0f});
+
+			// *** *** *** *** ***
+
+			int fCntOld = scene->fCnt;
+			int vCntOld = scene->vCnt;
+			int nCntOld = scene->nCnt;
+			scene->LoadOBJFile("dragon_vrip.obj", 0);
+
+			// *** *** *** *** ***
+
+			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			CMat4Df m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * 0.125f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(0.75f, 1.5, 1.4f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
+
+			fCntOld = scene->fCnt;
+			vCntOld = scene->vCnt;
+			nCntOld = scene->nCnt;
+			scene->LoadOBJFile("bun_zipper.obj", 1);
+
+			// *** *** *** *** ***
+
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * 0.375f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(-1.3f, 2.15f, 0.55f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
+
+			fCntOld = scene->fCnt;
+			vCntOld = scene->vCnt;
+			nCntOld = scene->nCnt;
+			scene->LoadOBJFile("lucy.obj", 2);
+
+			// *** *** *** *** ***
+
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.lB, sceneBounds.uB, sceneBounds.bB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
+			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(0.001f, 0.001f, 0.001f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.325f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(-0.8f, 0.15f, 2.5f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);*/
+
+			// *************************************************************************************
+
+			// drjohnson
+			/*C3DScene *scene = new C3DScene();
+
+			scene->light.Ox = -2.0f;
+			scene->light.Oy = 0.0;
+			scene->light.Oz	= -2.0f; 
+			scene->light.R = 1.0f; 
+			scene->light.G = 1.0f;
+			scene->light.B = 1.0f;
+
+			scene->AddVertex(CVec3Df(-0.5f, -0.5f, 0.0f));
+			scene->AddVertex(CVec3Df(0.5f, -0.5f, 0.0f));
+			scene->AddVertex(CVec3Df(0.5f, 0.5f, 0.0f));
+			scene->AddVertex(CVec3Df(-0.5f, 0.5f, 0.0f));
+			
+			scene->AddNormal(CVec3Df(0.0f, 0.0f, -1.0f));
+						
+			CFace f;
+
+			f.P1 = 0; f.P2 = 1; f.P3 = 2;
+			f.N1 = 0; f.N2 = 0; f.N3 = 0;
+			f.mat = 3;			
+			scene->AddFace(f);
+			
+			f.P1 = 0; f.P2 = 2; f.P3 = 3;
+			f.N1 = 0; f.N2 = 0; f.N3 = 0;
+			f.mat = 3;
+			scene->AddFace(f);
+
+			CMat4Df m;
+
+			m = CMat4Df::Scaling(CVec3Df(1.7f, 1.1f, 1.0f));
+			scene->Transform(m, 0, 3, 0, 0);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.25f);
+			scene->Transform(m, 0, 3, 0, 0);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * -0.09f);
+			scene->Transform(m, 0, 3, 0, 0);
+
+			m = CMat4Df::Translation(CVec3Df(-3.2f, 2.2f, -2.7f));
+			scene->Transform(m, 0, 3, 0, 0);
+
+			scene->AddVertex(CVec3Df(-0.5f, -0.5f, 0.0f));
+			scene->AddVertex(CVec3Df(0.5f, -0.5f, 0.0f));
+			scene->AddVertex(CVec3Df(0.5f, 0.5f, 0.0f));
+			scene->AddVertex(CVec3Df(-0.5f, 0.5f, 0.0f));
+
+			scene->AddNormal(CVec3Df(0.0f, 0.0f, 1.0f));
+
+			f.P1 = 4; f.P2 = 5; f.P3 = 6;
+			f.N1 = 1; f.N2 = 1; f.N3 = 1;
+			f.mat = 3;			
+			scene->AddFace(f);
+
+			f.P1 = 4; f.P2 = 6; f.P3 = 7;
+			f.N1 = 1; f.N2 = 1; f.N3 = 1;
+			f.mat = 3;
+			scene->AddFace(f);
+
+			m = CMat4Df::Scaling(CVec3Df(1.7f, 1.1f, 1.0f));
+			scene->Transform(m, 4, 7, 1, 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * 0.25f);
+			scene->Transform(m, 4, 7, 1, 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * -0.09f);
+			scene->Transform(m, 4, 7, 1, 1);
+
+			m = CMat4Df::Translation(CVec3Df(-3.2f, -2.025f, -2.7f));
+			scene->Transform(m, 4, 7, 1, 1);
+
+			// *** *** *** *** ***
+
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 16.0f, 0.75f, 1.125f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 16.0f, 0.0f, 4.0f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 16.0f, 0.0f, 128.0f});
+			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 16.0f, 0.0f, 128.0f});
+
+			// *** *** *** *** ***
+
+			int fCntOld = scene->fCnt;
+			int vCntOld = scene->vCnt;
+			int nCntOld = scene->nCnt;
+			scene->LoadOBJFile("dragon_vrip.obj", 0);
+
+			// *** *** *** *** ***
+
+			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(2.5f, 2.5f, 2.5f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * -0.05f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OZRotation(2.0f * M_PI * -0.25f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * -0.02f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(-3.3f, 0.0, -2.7f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
+
+			fCntOld = scene->fCnt;
+			vCntOld = scene->vCnt;
+			nCntOld = scene->nCnt;
+			scene->LoadOBJFile("bun_zipper.obj", 1);
+
+			// *** *** *** *** ***
+
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(2.5f, 2.5f, 2.5f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * -0.05f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OZRotation(2.0f * M_PI * -0.25f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * -0.02f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(-3.1f, 0.0, -2.4f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			// *** *** *** *** ***
+
+			fCntOld = scene->fCnt;
+			vCntOld = scene->vCnt;
+			nCntOld = scene->nCnt;
+			scene->LoadOBJFile("lucy.obj", 2);
+
+			// *** *** *** *** ***
+
+			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+
+			m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(0.0005f, 0.0005f, 0.0005f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(2.0f * M_PI * -0.05f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OZRotation(2.0f * M_PI * -0.25f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * -0.02f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OYRotation(2.0f * M_PI * -0.25f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(-3.35f, 0.0, -3.2f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);*/
+
+			// *************************************************************************************
 
 			epochNum = config.start_epoch;
 

@@ -4263,14 +4263,15 @@ void GetSceneBoundsOptiX(float& lB, float& rB, float& uB, float& dB, float& bB, 
 
 
 
-
-
 struct STriangleComponent {
 	float3 N1, N2, N3;
+	int material_index;
 };
 
 struct SOptiXRenderParamsMesh {
+	SLight *light;
 	STriangleComponent *TC;
+	SMaterial *materials;
 	OptixTraversableHandle asHandle;
 };
 
@@ -4299,7 +4300,9 @@ struct LaunchParamsMesh {
 	float chi_square_squared_radius;
 	int max_Gaussians_per_ray;
 
+	SLight *light;
 	STriangleComponent *TC;
+	SMaterial *materials;
 	OptixTraversableHandle traversable_tri;
 };
 
@@ -4732,12 +4735,26 @@ bool InitializeOptiXRendererMesh(
 
 		CVec3Df N3 = scene->nBuf[f.N3];
 		TC[i].N3 = make_float3(N3.X, N3.Y, N3.Z);
+
+		TC[i].material_index = f.mat;
 	}
+
+	error_CUDA = cudaMalloc(&params_OptiXMesh.light, sizeof(SLight) * 1);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpy(params_OptiXMesh.light, &scene->light, sizeof(SLight) * 1, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
 
 	error_CUDA = cudaMalloc(&params_OptiXMesh.TC, sizeof(STriangleComponent) * scene->fCnt);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	cudaMemcpy(params_OptiXMesh.TC, TC, sizeof(STriangleComponent) * scene->fCnt, cudaMemcpyHostToDevice);
+	error_CUDA = cudaMemcpy(params_OptiXMesh.TC, TC, sizeof(STriangleComponent) * scene->fCnt, cudaMemcpyHostToDevice);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMalloc(&params_OptiXMesh.materials, sizeof(SMaterial) * scene->mCnt);
+	if (error_CUDA != cudaSuccess) goto Error;
+
+	error_CUDA = cudaMemcpy(params_OptiXMesh.materials, scene->mBuf, sizeof(SMaterial) * scene->mCnt, cudaMemcpyHostToDevice);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	void *vertexBuffer;
@@ -5116,7 +5133,9 @@ bool RenderOptiXMesh(SOptiXRenderParams& params_OptiX, SOptiXRenderParamsMesh &p
 	launchParams.chi_square_squared_radius = chi_square_squared_radius_host; // !!! !!! !!!
 	launchParams.max_Gaussians_per_ray = max_Gaussians_per_ray_host; // !!! !!! !!!
 	
+	launchParams.light = params_OptiXMesh.light;
 	launchParams.TC = params_OptiXMesh.TC;
+	launchParams.materials = params_OptiXMesh.materials;
 	launchParams.traversable_tri = params_OptiXMesh.asHandle;
 
 	void *launchParamsBuffer;

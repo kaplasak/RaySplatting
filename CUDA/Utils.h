@@ -18,20 +18,19 @@ struct STriangle {
 };
 
 struct SMaterial {
+	float Ra, Ga, Ba;
 	float Rd, Gd, Bd;
-	float Re, Ge, Be;
-	float kd;
+	float shininess;
+	float kt;
 	float n;
-	float eta1, eta2;
-	bool isLight;
-	
+
 	SMaterial() {
-    }
-	
-	SMaterial(float Rd, float Gd, float Bd, float Re, float Ge, float Be, float kd, float n, bool isLight) :
-        Rd(Rd), Gd(Gd), Bd(Bd), Re(Re), Ge(Ge), Be(Be), kd(kd), n(n), isLight(isLight) 
-    {
-    }
+	}
+
+	SMaterial(float Ra, float Ga, float Ba, float Rd, float Gd, float Bd, float shininess, float kt, float n) :
+		Ra(Ra), Ga(Ga), Ba(Ba), Rd(Rd), Gd(Gd), Bd(Bd), shininess(shininess), kt(kt), n(n)
+	{
+	}
 };
 
 struct CFace {

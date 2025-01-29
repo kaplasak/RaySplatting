@@ -4,11 +4,18 @@
 #include "CVec3Df.h"
 #include "Utils.h"
 
+struct SLight {
+	float Ox, Oy, Oz;
+	float R, G, B;
+};
+
 class C3DScene {
     //friend class CKDTree;
     //friend class CBVHTree;
     
     public:
+		SLight light;
+
         CFace *fBuf;
         CVec3Df *nBuf;
         CVec3Df *vBuf;

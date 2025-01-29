@@ -419,7 +419,9 @@ extern bool DumpParameters(SOptiXRenderParams& params_OptiX);
 
 
 struct SOptiXRenderParamsMesh {
+	SLight *light;
 	void *TC;
+	SMaterial *materials;
 	unsigned long long asHandle;
 };
 
