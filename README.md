@@ -5,6 +5,8 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 | :---- |
 | [RaySplats: Ray Tracing based Gaussian Splatting](https://arxiv.org/pdf/???.pdf)|
 
+<img src=assets/gif1.gif height="200"> <br>
+
 <img src=assets/screenshot1.png height="200">  <img src=assets/screenshot92.png height="200"> <br>
 
 <img src=assets/screenshot10.png height="200" >  <img src=assets/screenshot4.png height="200" > <br>
