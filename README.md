@@ -1,3 +1,15 @@
+# RaySplats: Ray Tracing based Gaussian Splatting
+Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądziołka, Dawid Baran, Przemysław Spurek <br>
+
+<img src=assets/screenshot4.png height="300" >  <img src=assets/screenshot92.png height="300">
+
+
+| arXiv |
+| :---- |
+| [RaySplats: Ray Tracing based Gaussian Splatting](https://arxiv.org/pdf/???.pdf)|
+
+
+
 1. Prerequisites:
 -----------------
 - Install Visual Studio 2019 Enterprise;
