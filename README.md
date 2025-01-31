@@ -61,8 +61,9 @@ f = fopen("<location of the compiled *.ptx shader files>/shadersMesh.cu.ptx", "r
 
 On our test system, we used the following paths as the string literal passed to the fopen function:
 
-"C:/Users/<Windows username>/source/repos/RaySplattingCUDA/RaySplattingCUDA/x64/Release/shaders.cu.ptx"
-"C:/Users/<Windows username>/source/repos/RaySplattingCUDA/RaySplattingCUDA/x64/Release/shadersMesh.cu.ptx"
+"C:/Users/\<Windows username>/source/repos/RaySplattingCUDA/RaySplattingCUDA/x64/Release/shaders.cu.ptx"
+<br>
+"C:/Users/\<Windows username>/source/repos/RaySplattingCUDA/RaySplattingCUDA/x64/Release/shadersMesh.cu.ptx"
 
 - Build the project;
 
@@ -74,10 +75,10 @@ On our test system, we used the following paths as the string literal passed to 
 - Change project's Configuration to "Release, x64";
 - In Properties -> Configuration Properties -> Linker -> Input -> Additional Dependencies add new lines:
 
-"RaySplattingCUDA.lib"
-"cuda.lib"
-"cudart.lib"
-"cufft.lib"
+"RaySplattingCUDA.lib" <br>
+"cuda.lib" <br>
+"cudart.lib" <br>
+"cufft.lib" <br>
 
 - In Properties -> Configuration Properties -> Linker -> General -> Additional Library Directories add the "lib\x64" path of your CUDA toolkit. On our test system, we had to add the following path:
 
@@ -85,20 +86,20 @@ On our test system, we used the following paths as the string literal passed to 
 
 - In Properties -> Configuration Properties -> Linker -> General -> Additional Library Directories add the path of the directory containing your compiled CUDA static library. On our test system, we had to add the following path:
 
-"C:\Users\<Windows username>\source\repos\RaySplattingCUDA\x64\Release"
+"C:\Users\\\<Windows username>\source\repos\RaySplattingCUDA\x64\Release"
 
 4. Training the first model:
 ----------------------------
 - Create the directory "dump" in the main RaySplattingWindows project's directory and then create the subdirectory "dump\save" in the main RaySplattingWindows project's directory. The application will store the checkpoints here. On our test system we created those directories in the following directory:
 
-"C:\Users\<Windows username>\source\repos\RaySplattingWindows\RaySplattingWindows"
+"C:\Users\\\<Windows username>\source\repos\RaySplattingWindows\RaySplattingWindows"
 
 - Train the model with 3DGS for some small number of epochs (for example 100) on some dataset (for example: "truck" from "Tanks and Temples");
 - Copy the output file cameras.json to the dataset main directory;
 - Convert all of the files in the subdirectory "images" located in the dataset main directory to 24-bit *.bmp file format without changing their names;
 - Copy the configuration file "config.txt" to the project's main directory. On our test system we copied it to the following directory:
 
-"C:\Users\<Windows username>\source\repos\RaySplattingCUDA\x64\Release"
+"C:\Users\\\<Windows username>\source\repos\RaySplattingWindows\RaySplattingWindows"
 
 - In lines: 2 and 3 of the configuration file specify the location of the dataset main directory and the output 3DGS *.ply file obtained after short model pretraining;
 - Run the "RaySplattingWindows" project from the Visual Studio IDE;
