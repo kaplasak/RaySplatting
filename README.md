@@ -9,6 +9,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 
 <img src=assets/screenshot10.png height="200" >  <img src=assets/screenshot4.png height="200" > <br>
 
+<img src=assets/screenshot7.png height="200" >  <img src=assets/screenshot82.png height="200" > <br>
 
 1. Prerequisites:
 -----------------
