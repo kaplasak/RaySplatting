@@ -9,12 +9,12 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 
 <table class="center">
   <tr class="center">
-    <td><img src=assets/screenshot1.png height="200"></td>
-    <td><img src=assets/screenshot92.png height="200"></td>
+    <td><img src=assets/screenshot1.png height="200" class="center"></td>
+    <td><img src=assets/screenshot92.png height="200" class="center"></td>
   </tr>
   <tr class="center">
-    <td><img src=assets/screenshot10.png height="200" ></td>
-    <td><img src=assets/screenshot4.png height="200" ></td>
+    <td><img src=assets/screenshot10.png height="200" class="center"> </td>
+    <td><img src=assets/screenshot4.png height="200" class="center"> </td>
   </tr class="center">
   <tr class="center">
     <td><img src=assets/screenshot7.png height="200" ></td>
