@@ -7,7 +7,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 <img src=assets/gif1.gif height="300" class="center"> 
 <br>
 
-<table align="center" style="margin: 0px auto;">
+<table align="center" cellspacing="0" cellpadding="0">
   <tr class="center">
     <td><img src=assets/screenshot1.png height="200" class="center"></td>
     <td><img src=assets/screenshot92.png height="200" class="center"></td>
