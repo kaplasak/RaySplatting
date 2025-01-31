@@ -8,15 +8,15 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 <br>
 
 <table class="center">
-  <tr>
+  <tr class="center">
     <td><img src=assets/screenshot1.png height="200"></td>
     <td><img src=assets/screenshot92.png height="200"></td>
   </tr>
-  <tr>
+  <tr class="center">
     <td><img src=assets/screenshot10.png height="200" ></td>
     <td><img src=assets/screenshot4.png height="200" ></td>
-  </tr>
-  <tr>
+  </tr class="center">
+  <tr class="center">
     <td><img src=assets/screenshot7.png height="200" ></td>
     <td><img src=assets/screenshot82.png height="200" ></td>
   </tr>
