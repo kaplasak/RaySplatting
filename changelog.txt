@@ -1,1 +1,0 @@
-- Added the simple material system for the sake of visualization;

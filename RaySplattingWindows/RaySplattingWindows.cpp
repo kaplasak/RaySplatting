@@ -20,7 +20,7 @@
 #include <CommCtrl.h>
 
 #include "Renderer.h"
-#include "GaussianRendering.h"
+#include "RaySplattingWindows.h"
 
 // !!! !!! !!!
 #include "C3DScene.h"
@@ -788,7 +788,7 @@ void PrepareScene() {
 			GC[i].mY = pfs.y;
 			GC[i].mZ = pfs.z;
 			
-			// Potrzebne, bo w GS daj¹ œrednicê, a nie promieñ na poszczególnych osiach
+			
 			double sX = 0.5f / (1.0 + exp(-pfs.scale_0));
 			double sY = 0.5f / (1.0 + exp(-pfs.scale_1));
 			double sZ = 0.5f / (1.0 + exp(-pfs.scale_2));
@@ -882,14 +882,14 @@ int APIENTRY wWinMain(
 	// *** *** *** *** ***
 
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-    LoadStringW(hInstance, IDC_GAUSSIANRENDERING, szWindowClass, MAX_LOADSTRING);
+    LoadStringW(hInstance, IDC_RAYSPLATTINGWINDOWS, szWindowClass, MAX_LOADSTRING);
     MyRegisterClass(hInstance);
 
     if (!InitInstance (hInstance, nCmdShow)) {
         return FALSE;
     }
 
-    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_GAUSSIANRENDERING));
+    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_RAYSPLATTINGWINDOWS));
     MSG msg;
 
     while (GetMessage(&msg, nullptr, 0, 0)) {
@@ -912,10 +912,10 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
     wcex.cbClsExtra     = 0;
     wcex.cbWndExtra     = 0;
     wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_GAUSSIANRENDERING));
+    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_RAYSPLATTINGWINDOWS));
     wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground  = (HBRUSH)(COLOR_MENU+1);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_GAUSSIANRENDERING);
+    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_RAYSPLATTINGWINDOWS);
     wcex.lpszClassName  = szWindowClass;
     wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
@@ -1042,8 +1042,8 @@ bool result;
 //#define TEST_POSES_VISUALIZATION
 
 #ifndef CUDA_RENDERER
-	// Trzeba wywo³ywaæ w pierwszej kolejnoœci, poniewa¿ ustawia maksymaln¹ d³ugoœæ œcie¿ki, która jest wykorzystywana przy inicjalizacji
-	// do alokowania tablicy indeksów Gaussów.
+	
+	
 	SetConfigurationOptiX(config);
 	// !!! !!! !!!
 	if (config.start_epoch == 0) {
@@ -2165,8 +2165,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								
 								bool result;
 
-								// To musi byæ tutaj, poniewa¿ po funkcji RenderCUDA zostaj¹ wype³nione indeksy Gaussów, które nie s¹ czyszczone.
-								// Wówczas funkcja UpdateCUDAGradient mog³aby wzi¹æ za du¿o Gaussów.
+								
+								
 								
 								// OptiX
 								result = ZeroGradientOptiX(params_OptiX);

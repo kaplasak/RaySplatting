@@ -88,8 +88,8 @@ bool DumpParameters(SOptiXRenderParams& params_OptiX) {
 	if (error_CUDA != cudaSuccess) goto Error;
 	DumpToFile("dump/save", params_OptiX.epoch, "params4", buf, sizeof(REAL2_G) * params_OptiX.numberOfGaussians);
 
-	int *foo = (int *)malloc(sizeof(int) * params_OptiX.width * params_OptiX.height * dlugosc_promienia);
-	error_CUDA = cudaMemcpy(foo, params_OptiX.Gaussians_indices, sizeof(int) * params_OptiX.width * params_OptiX.height * dlugosc_promienia, cudaMemcpyDeviceToHost);
+	int *foo = (int *)malloc(sizeof(int) * params_OptiX.width * params_OptiX.height * ray length);
+	error_CUDA = cudaMemcpy(foo, params_OptiX.Gaussians_indices, sizeof(int) * params_OptiX.width * params_OptiX.height * ray length, cudaMemcpyDeviceToHost);
 	if (error_CUDA != cudaSuccess) goto Error;
 	for (int i = 0; i < params_OptiX.height; ++i) {
 		for (int j = 0; j < params_OptiX.width; ++j) {
@@ -105,7 +105,7 @@ bool DumpParameters(SOptiXRenderParams& params_OptiX) {
 			}
 		}
 	}
-	DumpToFile("dump/save", params_OptiX.epoch, "indices", foo, sizeof(int) * params_OptiX.width * params_OptiX.height * dlugosc_promienia);
+	DumpToFile("dump/save", params_OptiX.epoch, "indices", foo, sizeof(int) * params_OptiX.width * params_OptiX.height * ray length);
 	free(foo);*/
 
 	// *** *** *** *** ***

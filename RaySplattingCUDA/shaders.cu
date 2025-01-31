@@ -2,11 +2,11 @@
 
 #include "Header.cuh"
 
-// Dla pliku shaders.cu nale¿y ustawiæ typ kompilacji na "Generate device-only .ptx file (-ptx)" ustawiaj¹c:
-// CUDA C/C++ -> Common -> NVCC Compilation Type na "Generate device-only .ptx file (-ptx)", a nastêpnie ustawiæ opcjê:
-// CUDA C/C++ -> Common -> Compilaer Output (obj/cubin) na "$(CudaIntDirFullPath)\%(Filename)%(Extension).ptx", aby zapobiec skasowaniu
-// pliku w procesie kompilacji. Utworzony plik *.ptx powinien pojawiæ siê w folderze <nazwa projektu>\<nazwa projektu>\x64\Release
-// (Uwaga! Nie w g³ównym folderze zawieraj¹cym wyjœcie kompilatora: <nazwa projektu>\x64\Release).
+
+
+
+
+
 
 // *************************************************************************************************
 
@@ -45,7 +45,7 @@ extern "C" __constant__ LaunchParams optixLaunchParams;
 // 3115 2078 "fy": 3240.8079303073573, "fx": 3231.5814007282897
 
 // !!! !!! !!!
-// Dodanie extern "C" zapobiega name manglingowi, który utrudni³by znalezienie w za³adowanym pliku *.ptx funkcji po ich oryginalnych nazwach.
+
 // !!! !!! !!!
 extern "C" __global__ void __raygen__renderFrame() {
 	int x = optixGetLaunchIndex().x;

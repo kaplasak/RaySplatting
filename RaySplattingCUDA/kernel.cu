@@ -475,19 +475,19 @@ extern bool InitializeCUDAGradient(SRenderParams& params, SCUDARenderParams& dev
 	if (cudaStatus != cudaSuccess)
 		goto Error;
 
-	// !!! !!! !!! WNIMANIE !!! !!! !!!
+	
 	cudaStatus = cudaMalloc((void **)&params.dev_mu_bitmap_out_R, sizeof(REAL) * arraySizeReal); // !!! !!! !!!
 	if (cudaStatus != cudaSuccess)
 		goto Error;
 	dev_params.dev_mu_bitmap_out_R = params.dev_mu_bitmap_out_R; // !!! !!! !!!
 
-	// !!! !!! !!! WNIMANIE !!! !!! !!!
+	
 	cudaStatus = cudaMalloc((void **)&params.dev_mu_bitmap_out_G, sizeof(REAL) * arraySizeReal); // !!! !!! !!!
 	if (cudaStatus != cudaSuccess)
 		goto Error;
 	dev_params.dev_mu_bitmap_out_G = params.dev_mu_bitmap_out_G; // !!! !!! !!!
 
-	// !!! !!! !!! WNIMANIE !!! !!! !!!
+	
 	cudaStatus = cudaMalloc((void **)&params.dev_mu_bitmap_out_B, sizeof(REAL) * arraySizeReal); // !!! !!! !!!
 	if (cudaStatus != cudaSuccess)
 		goto Error;
@@ -532,7 +532,7 @@ extern bool InitializeCUDAGradient(SRenderParams& params, SCUDARenderParams& dev
 
 	// *** *** *** *** ***
 
-	// Bufor został uzupełniony zerami przy okazji tworzenia kernela Gaussowskiego
+	
 	for (int pose = 0; pose < params.NUMBER_OF_POSES; ++pose) {
 		// R channel
 		for (int i = 0; i < params.h; ++i) {
@@ -1919,7 +1919,7 @@ __device__ static bool IntersectRayGaussianComponentDouble(
 
 // *** *** *** *** ***
 
-// modulacja przezroczystości równa 1 - odległość Mahalanobisa do kwadratu
+
 __global__ void RenderCUDAKernel(SCUDARenderParams dev_params) {
 	int GaussIndices[MAX_RAY_LENGTH];
 
@@ -1929,7 +1929,7 @@ __global__ void RenderCUDAKernel(SCUDARenderParams dev_params) {
 	unsigned i, j;
 	dev_DeinterleaveBits(tid, j, i);
 	if ((j < dev_params.w) && (i < dev_params.h)) {
-		// NIE TRZEBA. WYPEŁNIAMY TABLICĘ INDEKSÓW BAJTAMI 255, CO DAJE -1
+		
 
 		// !!! !!! !!!
 		//for (int ii = 0; ii < MAX_RAY_LENGTH; ++ii)

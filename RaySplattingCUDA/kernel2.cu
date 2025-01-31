@@ -189,7 +189,7 @@ bool InitializeOptiXRenderer(
 
 	// *********************************************************************************************
 
-	FILE *f = fopen("C:/Users/pc/source/repos/GaussianRenderingCUDA/GaussianRenderingCUDA/x64/Release/shaders.cu.ptx", "rb");
+	FILE *f = fopen("C:/Users/pc/source/repos/RaySplattingCUDA/RaySplattingCUDA/x64/Release/shaders.cu.ptx", "rb");
 	fseek(f, 0, SEEK_END);
 	int ptxCodeSize = ftell(f);
 	fclose(f);
@@ -198,7 +198,7 @@ bool InitializeOptiXRenderer(
 	char *buffer = (char *)malloc(sizeof(char) * (ptxCodeSize + 1));
 	ptxCode[0] = 0; // !!! !!! !!!
 
-	f = fopen("C:/Users/pc/source/repos/GaussianRenderingCUDA/GaussianRenderingCUDA/x64/Release/shaders.cu.ptx", "rt");
+	f = fopen("C:/Users/pc/source/repos/RaySplattingCUDA/RaySplattingCUDA/x64/Release/shaders.cu.ptx", "rt");
 	while (!feof(f)) {
 		fgets(buffer, ptxCodeSize + 1, f);
 		ptxCode = strcat(ptxCode, buffer);
@@ -475,7 +475,7 @@ bool InitializeOptiXRenderer(
 		float sY = 1.0f / (1.0f + expf(-GC_part_3[i].x));
 		float sZ = 1.0f / (1.0f + expf(-GC_part_3[i].y));
 
-		// TO JEST èLE, BO NIE UWZGL DNIAMY EXTENTU SCENY
+		
 		/*sX = ((sX < min_s_coefficients_clipping_threshold_host) ? min_s_coefficients_clipping_threshold_host : sX);
 		sY = ((sY < min_s_coefficients_clipping_threshold_host) ? min_s_coefficients_clipping_threshold_host : sY);
 		sZ = ((sZ < min_s_coefficients_clipping_threshold_host) ? min_s_coefficients_clipping_threshold_host : sZ);
@@ -540,7 +540,7 @@ bool InitializeOptiXRenderer(
 	
 	scene_extent_local = sqrtf((dX * dX) + (dY * dY) + (dZ * dZ));
 
-	// Dopiero teraz, gdy mamy policzony ekstent sceny moøemy przycinaÊ parametry skali GaussÛw.
+	
 	for (int i = 0; i < params_OptiX.numberOfGaussians; ++i) {
 		float sX = 1.0f / (1.0f + expf(-GC_part_2[i].w));
 		float sY = 1.0f / (1.0f + expf(-GC_part_3[i].x));
@@ -1045,7 +1045,7 @@ bool InitializeOptiXOptimizer(
 	// ************************************************************************************************
 
 #ifndef SSIM_REDUCE_MEMORY_OVERHEAD
-	// Bufor zosta≥ uzupe≥niony zerami przy okazji tworzenia kernela Gaussowskiego
+	
 	for (int pose = 0; pose < params.NUMBER_OF_POSES; ++pose) {
 		// R channel
 		for (int i = 0; i < params_OptiX.height; ++i) {
@@ -3026,7 +3026,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state) {
 	// *********************************************************************************************
 
 #ifdef SSIM_REDUCE_MEMORY_OVERHEAD
-	// Bufor zosta≥ uzupe≥niony zerami przy okazji tworzenia kernela Gaussowskiego
+	
 	/*for (int pose = 0; pose < params.NUMBER_OF_POSES; ++pose) {
 		// R channel
 		for (int i = 0; i < params_OptiX.height; ++i) {
@@ -4337,7 +4337,7 @@ bool InitializeOptiXRendererMesh(
 
 	// *********************************************************************************************
 
-	FILE *f = fopen("C:/Users/pc/source/repos/GaussianRenderingCUDA/GaussianRenderingCUDA/x64/Release/shadersMesh.cu.ptx", "rb");
+	FILE *f = fopen("C:/Users/pc/source/repos/RaySplattingCUDA/RaySplattingCUDA/x64/Release/shadersMesh.cu.ptx", "rb");
 	fseek(f, 0, SEEK_END);
 	int ptxCodeSize = ftell(f);
 	fclose(f);
@@ -4346,7 +4346,7 @@ bool InitializeOptiXRendererMesh(
 	char *buffer = (char *)malloc(sizeof(char) * (ptxCodeSize + 1));
 	ptxCode[0] = 0; // !!! !!! !!!
 
-	f = fopen("C:/Users/pc/source/repos/GaussianRenderingCUDA/GaussianRenderingCUDA/x64/Release/shadersMesh.cu.ptx", "rt");
+	f = fopen("C:/Users/pc/source/repos/RaySplattingCUDA/RaySplattingCUDA/x64/Release/shadersMesh.cu.ptx", "rt");
 	while (!feof(f)) {
 		fgets(buffer, ptxCodeSize + 1, f);
 		ptxCode = strcat(ptxCode, buffer);
@@ -4681,7 +4681,7 @@ bool InitializeOptiXRendererMesh(
 
 	scene_extent_local = sqrtf((dX * dX) + (dY * dY) + (dZ * dZ));
 
-	// Dopiero teraz, gdy mamy policzony ekstent sceny moøemy przycinaÊ parametry skali GaussÛw.
+	
 	for (int i = 0; i < params_OptiX.numberOfGaussians; ++i) {
 		float sX = 1.0f / (1.0f + expf(-GC_part_2[i].w));
 		float sY = 1.0f / (1.0f + expf(-GC_part_3[i].x));
