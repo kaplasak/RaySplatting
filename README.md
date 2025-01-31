@@ -98,7 +98,7 @@ On our test system, we used the following paths as the string literal passed to 
 - Convert all of the files in the subdirectory "images" located in the dataset main directory to 24-bit *.bmp file format without changing their names;
 - Copy the configuration file "config.txt" to the project's main directory. On our test system we copied it to the following directory:
 
-"C:\Users\<Windows username>\source\repos\RaySplattingCUDA\x64\Release"
+"C:\Users\<Windows username>\source\repos\RaySplattingWindows\RaySplattingWindows"
 
 - In lines: 2 and 3 of the configuration file specify the location of the dataset main directory and the output 3DGS *.ply file obtained after short model pretraining;
 - Run the "RaySplattingWindows" project from the Visual Studio IDE;
