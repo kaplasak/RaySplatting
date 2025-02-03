@@ -3,7 +3,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 
 | arXiv |
 | :---- |
-| [RaySplats: Ray Tracing based Gaussian Splatting]([https://arxiv.org/pdf/???.pdf](http://arxiv.org/abs/2501.19196)|
+| [RaySplats: Ray Tracing based Gaussian Splatting]([https://arxiv.org/pdf/???.pdf](http://arxiv.org/abs/2501.19196)]|
 
 
 <img src=assets/gif1.gif height="300" class="center"> 
