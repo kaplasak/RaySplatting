@@ -31,7 +31,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 - Install CUDA Toolkit 12.4.1;
 - Install NVIDIA OptiX SDK 8.0.0;
 
-2. Copiling the CUDA static library:
+2. Compiling the CUDA static library:
 ------------------------------------
 - Create the new CUDA 12.4 Runtime project and name it "RaySplattingCUDA";
 - Remove the newly created kernel.cu file with the code template;
