@@ -415,7 +415,7 @@ extern bool RenderOptiX(SOptiXRenderParams& params_OptiX);
 extern bool UpdateGradientOptiX(SOptiXRenderParams& params_OptiX, int &state);
 
 extern bool DumpParameters(SOptiXRenderParams& params_OptiX);
-
+extern bool DumpParametersToPLYFile(SOptiXRenderParams& params_OptiX);
 
 
 struct SOptiXRenderParamsMesh {

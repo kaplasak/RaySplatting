@@ -1,0 +1,4 @@
+- Adding the *.ply file generation during the checkpoint saving every <Model parameters saving frequency> epoch;
+- Replacing the former inverse sigmoid scale parameter activation function with the exponential activation function;
+- Fixing the minor bug in loading the *.ply file containing the pretrained model;
+- Optimizing the renderer code by reusing the delta value computed by the intersection shader to compute the final opacity value in the raygen shader. In the previous releases it was computed from scratch;

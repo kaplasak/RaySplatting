@@ -219,11 +219,12 @@ bool InitializeOptiXRenderer(
 	pipelineCompileOptions.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
 	pipelineCompileOptions.usesMotionBlur = false;
 #ifndef RENDERER_OPTIX_USE_DOUBLE_PRECISION
-	pipelineCompileOptions.numPayloadValues = 2; // (12) !!! !!! !!!
+	pipelineCompileOptions.numPayloadValues = 3;
+	pipelineCompileOptions.numAttributeValues = 2;
 #else
-	pipelineCompileOptions.numPayloadValues = 2; // (19) !!! !!! !!!
+	pipelineCompileOptions.numPayloadValues = 4;
+	pipelineCompileOptions.numAttributeValues = 4;
 #endif
-	pipelineCompileOptions.numAttributeValues = 0;
 	pipelineCompileOptions.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
 	pipelineCompileOptions.pipelineLaunchParamsVariableName = "optixLaunchParams";
 
@@ -283,8 +284,8 @@ bool InitializeOptiXRenderer(
 
 	OptixProgramGroupDesc pgDesc_hitgroup = {};
 	pgDesc_hitgroup.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
-	pgDesc_hitgroup.hitgroup.moduleAH            = module;
-	pgDesc_hitgroup.hitgroup.entryFunctionNameAH = "__anyhit__radiance";
+	//pgDesc_hitgroup.hitgroup.moduleAH            = module; // !!! !!! !!!
+	//pgDesc_hitgroup.hitgroup.entryFunctionNameAH = "__anyhit__radiance"; // !!! !!! !!!
 	pgDesc_hitgroup.hitgroup.moduleCH            = module;           
 	pgDesc_hitgroup.hitgroup.entryFunctionNameCH = "__closesthit__radiance";
 	pgDesc_hitgroup.hitgroup.moduleIS            = module;
@@ -471,22 +472,15 @@ bool InitializeOptiXRenderer(
 		float Q32 = cd + ab;
 		float Q33 = 1.0f - bb - cc;
 
-		float sX = 1.0f / (1.0f + expf(-GC_part_2[i].w));
+		// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+		/*float sX = 1.0f / (1.0f + expf(-GC_part_2[i].w));
 		float sY = 1.0f / (1.0f + expf(-GC_part_3[i].x));
-		float sZ = 1.0f / (1.0f + expf(-GC_part_3[i].y));
+		float sZ = 1.0f / (1.0f + expf(-GC_part_3[i].y));*/
 
-		
-		/*sX = ((sX < min_s_coefficients_clipping_threshold_host) ? min_s_coefficients_clipping_threshold_host : sX);
-		sY = ((sY < min_s_coefficients_clipping_threshold_host) ? min_s_coefficients_clipping_threshold_host : sY);
-		sZ = ((sZ < min_s_coefficients_clipping_threshold_host) ? min_s_coefficients_clipping_threshold_host : sZ);
-
-		sX = ((sX > max_s_coefficients_clipping_threshold_host) ? max_s_coefficients_clipping_threshold_host : sX);
-		sY = ((sY > max_s_coefficients_clipping_threshold_host) ? max_s_coefficients_clipping_threshold_host : sY);
-		sZ = ((sZ > max_s_coefficients_clipping_threshold_host) ? max_s_coefficients_clipping_threshold_host : sZ);
-
-		GC_part_2[i].w = -logf((1.0f / sX) - 1.0f);
-		GC_part_3[i].x = -logf((1.0f / sY) - 1.0f);
-		GC_part_3[i].y = -logf((1.0f / sZ) - 1.0f);*/
+		// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+		float sX = expf(GC_part_2[i].w);
+		float sY = expf(GC_part_3[i].x);
+		float sZ = expf(GC_part_3[i].y);
 
 		float tmpX = sqrtf(chi_square_squared_radius_host * ((sX * sX * Q11 * Q11) + (sY * sY * Q12 * Q12) + (sZ * sZ * Q13 * Q13)));
 		float tmpY = sqrtf(chi_square_squared_radius_host * ((sX * sX * Q21 * Q21) + (sY * sY * Q22 * Q22) + (sZ * sZ * Q23 * Q23)));
@@ -542,9 +536,15 @@ bool InitializeOptiXRenderer(
 
 	
 	for (int i = 0; i < params_OptiX.numberOfGaussians; ++i) {
-		float sX = 1.0f / (1.0f + expf(-GC_part_2[i].w));
+		// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+		/*float sX = 1.0f / (1.0f + expf(-GC_part_2[i].w));
 		float sY = 1.0f / (1.0f + expf(-GC_part_3[i].x));
-		float sZ = 1.0f / (1.0f + expf(-GC_part_3[i].y));
+		float sZ = 1.0f / (1.0f + expf(-GC_part_3[i].y));*/
+
+		// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+		float sX = expf(GC_part_2[i].w);
+		float sY = expf(GC_part_3[i].x);
+		float sZ = expf(GC_part_3[i].y);
 
 		sX = ((sX < scene_extent_local * min_s_coefficients_clipping_threshold_host) ? scene_extent_local * min_s_coefficients_clipping_threshold_host : sX);
 		sY = ((sY < scene_extent_local * min_s_coefficients_clipping_threshold_host) ? scene_extent_local * min_s_coefficients_clipping_threshold_host : sY);
@@ -554,9 +554,15 @@ bool InitializeOptiXRenderer(
 		sY = ((sY > scene_extent_local * max_s_coefficients_clipping_threshold_host) ? scene_extent_local * max_s_coefficients_clipping_threshold_host : sY);
 		sZ = ((sZ > scene_extent_local * max_s_coefficients_clipping_threshold_host) ? scene_extent_local * max_s_coefficients_clipping_threshold_host : sZ);
 
-		GC_part_2[i].w = -logf((1.0f / sX) - 1.0f);
+		// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+		/*GC_part_2[i].w = -logf((1.0f / sX) - 1.0f);
 		GC_part_3[i].x = -logf((1.0f / sY) - 1.0f);
-		GC_part_3[i].y = -logf((1.0f / sZ) - 1.0f);
+		GC_part_3[i].y = -logf((1.0f / sZ) - 1.0f);*/
+
+		// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+		GC_part_2[i].w = logf(sX);
+		GC_part_3[i].x = logf(sY);
+		GC_part_3[i].y = logf(sZ);
 	}
 
 	// *********************************************************************************************
@@ -1430,8 +1436,9 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 			REAL_G Ox = ((REAL_G)params_OptiX.O.x) - GC_2.x;
 			REAL_G Oy = ((REAL_G)params_OptiX.O.y) - GC_2.y;
 			REAL_G Oz = ((REAL_G)params_OptiX.O.z) - GC_2.z;
-
-			REAL_G sXInvMinusOne = EXP_G(-GC_2.w); // !!! !!! !!!
+			
+			// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+			/*REAL_G sXInvMinusOne = EXP_G(-GC_2.w); // !!! !!! !!!
 			REAL_G sYInvMinusOne = EXP_G(-GC_3.x); // !!! !!! !!!
 			REAL_G sZInvMinusOne = EXP_G(-GC_3.y); // !!! !!! !!!
 
@@ -1444,6 +1451,19 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 			REAL_G vy_prim = MAD_G(R12, v.x, MAD_G(R22, v.y, R32 * v.z)) * sYInv;
 
 			REAL_G sZInv = 1 + sZInvMinusOne;
+			REAL_G Oz_prim = MAD_G(R13, Ox, MAD_G(R23, Oy, R33 * Oz)) * sZInv;
+			REAL_G vz_prim = MAD_G(R13, v.x, MAD_G(R23, v.y, R33 * v.z)) * sZInv;*/
+
+			// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+			REAL_G sXInv = EXP_G(-GC_2.w);
+			REAL_G Ox_prim = MAD_G(R11, Ox, MAD_G(R21, Oy, R31 * Oz)) * sXInv;
+			REAL_G vx_prim = MAD_G(R11, v.x, MAD_G(R21, v.y, R31 * v.z)) * sXInv;
+
+			REAL_G sYInv = EXP_G(-GC_3.x);
+			REAL_G Oy_prim = MAD_G(R12, Ox, MAD_G(R22, Oy, R32 * Oz)) * sYInv;
+			REAL_G vy_prim = MAD_G(R12, v.x, MAD_G(R22, v.y, R32 * v.z)) * sYInv;
+
+			REAL_G sZInv = EXP_G(-GC_3.y);
 			REAL_G Oz_prim = MAD_G(R13, Ox, MAD_G(R23, Oy, R33 * Oz)) * sZInv;
 			REAL_G vz_prim = MAD_G(R13, v.x, MAD_G(R23, v.y, R33 * v.z)) * sZInv;
 
@@ -1553,6 +1573,9 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 
 			// *************************************************************************************
 
+			// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+			
+			/*
 			// dL_dsX
 			REAL_G dot_product_1 = MAD_G(Ox, R11, MAD_G(Oy, R21, Oz * R31));
 			REAL_G dot_product_2 = MAD_G(v.x, R11, MAD_G(v.y, R21, v.z * R31));
@@ -1569,6 +1592,26 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 			dot_product_1 = MAD_G(Ox, R13, MAD_G(Oy, R23, Oz * R33));
 			dot_product_2 = MAD_G(v.x, R13, MAD_G(v.y, R23, v.z * R33));
 			dL_dparam = vecz_tmp * sZInvMinusOne * MAD_G(-tmp1, dot_product_2, dot_product_1);
+			atomicAdd(((REAL_G *)params_OptiX.dL_dparams_3) + (GaussInd * 4) + 1, dL_dparam);*/
+
+			// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+
+			// dL_dsX
+			REAL_G dot_product_1 = MAD_G(Ox, R11, MAD_G(Oy, R21, Oz * R31));
+			REAL_G dot_product_2 = MAD_G(v.x, R11, MAD_G(v.y, R21, v.z * R31));
+			dL_dparam = vecx_tmp * sXInv * MAD_G(-tmp1, dot_product_2, dot_product_1);
+			atomicAdd(((REAL_G *)params_OptiX.dL_dparams_2) + (GaussInd * 4) + 3, dL_dparam);
+
+			// dL_dsY
+			dot_product_1 = MAD_G(Ox, R12, MAD_G(Oy, R22, Oz * R32));
+			dot_product_2 = MAD_G(v.x, R12, MAD_G(v.y, R22, v.z * R32));
+			dL_dparam = vecy_tmp * sYInv * MAD_G(-tmp1, dot_product_2, dot_product_1);
+			atomicAdd(((REAL_G *)params_OptiX.dL_dparams_3) + (GaussInd * 4), dL_dparam);
+
+			// dL_dsZ
+			dot_product_1 = MAD_G(Ox, R13, MAD_G(Oy, R23, Oz * R33));
+			dot_product_2 = MAD_G(v.x, R13, MAD_G(v.y, R23, v.z * R33));
+			dL_dparam = vecz_tmp * sZInv * MAD_G(-tmp1, dot_product_2, dot_product_1);
 			atomicAdd(((REAL_G *)params_OptiX.dL_dparams_3) + (GaussInd * 4) + 1, dL_dparam);
 
 			// *************************************************************************************
@@ -1758,7 +1801,8 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 				REAL_G Oy = ((REAL_G)params_OptiX.O.y) - GC_2.y;
 				REAL_G Oz = ((REAL_G)params_OptiX.O.z) - GC_2.z;
 
-				REAL_G sXInvMinusOne = EXP_G(-GC_2.w); // !!! !!! !!!
+				// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+				/*REAL_G sXInvMinusOne = EXP_G(-GC_2.w); // !!! !!! !!!
 				REAL_G sYInvMinusOne = EXP_G(-GC_3.x); // !!! !!! !!!
 				REAL_G sZInvMinusOne = EXP_G(-GC_3.y); // !!! !!! !!!
 
@@ -1771,6 +1815,19 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 				REAL_G vy_prim = MAD_G(R12, v.x, MAD_G(R22, v.y, R32 * v.z)) * sYInv;
 
 				REAL_G sZInv = 1 + sZInvMinusOne;
+				REAL_G Oz_prim = MAD_G(R13, Ox, MAD_G(R23, Oy, R33 * Oz)) * sZInv;
+				REAL_G vz_prim = MAD_G(R13, v.x, MAD_G(R23, v.y, R33 * v.z)) * sZInv;*/
+
+				// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+				REAL_G sXInv = EXP_G(-GC_2.w);
+				REAL_G Ox_prim = MAD_G(R11, Ox, MAD_G(R21, Oy, R31 * Oz)) * sXInv;
+				REAL_G vx_prim = MAD_G(R11, v.x, MAD_G(R21, v.y, R31 * v.z)) * sXInv;
+
+				REAL_G sYInv = EXP_G(-GC_3.x);
+				REAL_G Oy_prim = MAD_G(R12, Ox, MAD_G(R22, Oy, R32 * Oz)) * sYInv;
+				REAL_G vy_prim = MAD_G(R12, v.x, MAD_G(R22, v.y, R32 * v.z)) * sYInv;
+
+				REAL_G sZInv = EXP_G(-GC_3.y);
 				REAL_G Oz_prim = MAD_G(R13, Ox, MAD_G(R23, Oy, R33 * Oz)) * sZInv;
 				REAL_G vz_prim = MAD_G(R13, v.x, MAD_G(R23, v.y, R33 * v.z)) * sZInv;
 
@@ -1853,7 +1910,8 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 			REAL_G Oy = ((REAL_G)params_OptiX.O.y) - GC_2.y;
 			REAL_G Oz = ((REAL_G)params_OptiX.O.z) - GC_2.z;
 
-			REAL_G sXInvMinusOne = EXP_G(-GC_2.w); // !!! !!! !!!
+			// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+			/*REAL_G sXInvMinusOne = EXP_G(-GC_2.w); // !!! !!! !!!
 			REAL_G sYInvMinusOne = EXP_G(-GC_3.x); // !!! !!! !!!
 			REAL_G sZInvMinusOne = EXP_G(-GC_3.y); // !!! !!! !!!
 
@@ -1866,6 +1924,19 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 			REAL_G vy_prim = MAD_G(R12, v.x, MAD_G(R22, v.y, R32 * v.z)) * sYInv;
 
 			REAL_G sZInv = 1 + sZInvMinusOne;
+			REAL_G Oz_prim = MAD_G(R13, Ox, MAD_G(R23, Oy, R33 * Oz)) * sZInv;
+			REAL_G vz_prim = MAD_G(R13, v.x, MAD_G(R23, v.y, R33 * v.z)) * sZInv;*/
+
+			// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+			REAL_G sXInv = EXP_G(-GC_2.w);
+			REAL_G Ox_prim = MAD_G(R11, Ox, MAD_G(R21, Oy, R31 * Oz)) * sXInv;
+			REAL_G vx_prim = MAD_G(R11, v.x, MAD_G(R21, v.y, R31 * v.z)) * sXInv;
+
+			REAL_G sYInv = EXP_G(-GC_3.x);
+			REAL_G Oy_prim = MAD_G(R12, Ox, MAD_G(R22, Oy, R32 * Oz)) * sYInv;
+			REAL_G vy_prim = MAD_G(R12, v.x, MAD_G(R22, v.y, R32 * v.z)) * sYInv;
+
+			REAL_G sZInv = EXP_G(-GC_3.y);
 			REAL_G Oz_prim = MAD_G(R13, Ox, MAD_G(R23, Oy, R33 * Oz)) * sZInv;
 			REAL_G vz_prim = MAD_G(R13, v.x, MAD_G(R23, v.y, R33 * v.z)) * sZInv;
 
@@ -1941,6 +2012,8 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 
 			// *************************************************************************************
 
+			// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+			/*
 			// dL_dsX
 			REAL_G dot_product_1 = MAD_G(Ox, R11, MAD_G(Oy, R21, Oz * R31));
 			REAL_G dot_product_2 = MAD_G(v.x, R11, MAD_G(v.y, R21, v.z * R31));
@@ -1957,6 +2030,26 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 			dot_product_1 = MAD_G(Ox, R13, MAD_G(Oy, R23, Oz * R33));
 			dot_product_2 = MAD_G(v.x, R13, MAD_G(v.y, R23, v.z * R33));
 			dL_dparam = vecz_tmp * sZInvMinusOne * MAD_G(-tmp1, dot_product_2, dot_product_1);
+			atomicAdd(((REAL_G *)params_OptiX.dL_dparams_3) + (LastGaussInd * 4) + 1, dL_dparam);*/
+
+			// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+
+			// dL_dsX
+			REAL_G dot_product_1 = MAD_G(Ox, R11, MAD_G(Oy, R21, Oz * R31));
+			REAL_G dot_product_2 = MAD_G(v.x, R11, MAD_G(v.y, R21, v.z * R31));
+			dL_dparam = vecx_tmp * sXInv * MAD_G(-tmp1, dot_product_2, dot_product_1);
+			atomicAdd(((REAL_G *)params_OptiX.dL_dparams_2) + (LastGaussInd * 4) + 3, dL_dparam);
+
+			// dL_dsY
+			dot_product_1 = MAD_G(Ox, R12, MAD_G(Oy, R22, Oz * R32));
+			dot_product_2 = MAD_G(v.x, R12, MAD_G(v.y, R22, v.z * R32));
+			dL_dparam = vecy_tmp * sYInv * MAD_G(-tmp1, dot_product_2, dot_product_1);
+			atomicAdd(((REAL_G *)params_OptiX.dL_dparams_3) + (LastGaussInd * 4), dL_dparam);
+
+			// dL_dsZ
+			dot_product_1 = MAD_G(Ox, R13, MAD_G(Oy, R23, Oz * R33));
+			dot_product_2 = MAD_G(v.x, R13, MAD_G(v.y, R23, v.z * R33));
+			dL_dparam = vecz_tmp * sZInv * MAD_G(-tmp1, dot_product_2, dot_product_1);
 			atomicAdd(((REAL_G *)params_OptiX.dL_dparams_3) + (LastGaussInd * 4) + 1, dL_dparam);
 
 			// *************************************************************************************
@@ -2344,10 +2437,18 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 		// qi
 		GC_3.w -= ((lr * (m3.w * tmp1)) / (sqrtf(v3.w * tmp2) + epsilon));
 
-		scale = make_float3(
+		// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+		/*scale = make_float3(
 			1.0f / (1.0f + expf(-GC_2.w)),
 			1.0f / (1.0f + expf(-GC_3.x)),
 			1.0f / (1.0f + expf(-GC_3.y))
+		);*/
+
+		// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+		scale = make_float3(
+			expf(GC_2.w),
+			expf(GC_3.x),
+			expf(GC_3.y)
 		);
 	
 		float length = sqrtf((scale.x * scale.x) + (scale.y * scale.y) + (scale.z * scale.z));
@@ -2393,10 +2494,6 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 			counter2 = 0;
 		}
 		__syncthreads();
-
-		// !!! !!! !!!
-		//isMovedEnough = false; // !!! !!! !!!
-		// !!! !!! !!!
 
 		if (tid < params_OptiX.numberOfGaussians) {
 			if ((isOpaqueEnough) && (isBigEnough) && (isNotTooBig)) {
@@ -2447,8 +2544,6 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 
 		// *****************************************************************************************
 
-		//if (((params_OptiX.epoch - 1) % 3000) == 0) GC_1.w = -logf(254.0f - 1.0f); // !!! !!! !!!
-
 		float3 lower_bound;
 		float3 upper_bound;
 
@@ -2461,9 +2556,15 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 			scale.y = ((scale.y > scene_extent * max_s_coefficients_clipping_threshold) ? scene_extent * max_s_coefficients_clipping_threshold : scale.y);
 			scale.z = ((scale.z > scene_extent * max_s_coefficients_clipping_threshold) ? scene_extent * max_s_coefficients_clipping_threshold : scale.z);
 
-			GC_2.w = -logf((1.0f / scale.x) - 1.0f);
+			// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+			/*GC_2.w = -logf((1.0f / scale.x) - 1.0f);
 			GC_3.x = -logf((1.0f / scale.y) - 1.0f);
-			GC_3.y = -logf((1.0f / scale.z) - 1.0f);
+			GC_3.y = -logf((1.0f / scale.z) - 1.0f);*/
+
+			// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+			GC_2.w = logf(scale.x);
+			GC_3.x = logf(scale.y);
+			GC_3.y = logf(scale.z);
 
 			float tmpX = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
 			float tmpY = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
@@ -2556,9 +2657,15 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 						scale.y = ((scale.y > scene_extent * max_s_coefficients_clipping_threshold) ? scene_extent * max_s_coefficients_clipping_threshold : scale.y);
 						scale.z = ((scale.z > scene_extent * max_s_coefficients_clipping_threshold) ? scene_extent * max_s_coefficients_clipping_threshold : scale.z);
 
-						GC_2.w = -logf((1.0f / scale.x) - 1.0f);
+						// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+						/*GC_2.w = -logf((1.0f / scale.x) - 1.0f);
 						GC_3.x = -logf((1.0f / scale.y) - 1.0f);
-						GC_3.y = -logf((1.0f / scale.z) - 1.0f);
+						GC_3.y = -logf((1.0f / scale.z) - 1.0f);*/
+
+						// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+						GC_2.w = logf(scale.x);
+						GC_3.x = logf(scale.y);
+						GC_3.y = logf(scale.z);
 
 						float tmpX = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
 						float tmpY = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
@@ -2652,9 +2759,15 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 						scale.y = ((scale.y > scene_extent * max_s_coefficients_clipping_threshold) ? scene_extent * max_s_coefficients_clipping_threshold : scale.y);
 						scale.z = ((scale.z > scene_extent * max_s_coefficients_clipping_threshold) ? scene_extent * max_s_coefficients_clipping_threshold : scale.z);
 
-						GC_2.w = -logf((1.0f / scale.x) - 1.0f);
+						// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+						/*GC_2.w = -logf((1.0f / scale.x) - 1.0f);
 						GC_3.x = -logf((1.0f / scale.y) - 1.0f);
-						GC_3.y = -logf((1.0f / scale.z) - 1.0f);
+						GC_3.y = -logf((1.0f / scale.z) - 1.0f);*/
+
+						// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+						GC_2.w = logf(scale.x);
+						GC_3.x = logf(scale.y);
+						GC_3.y = logf(scale.z);
 
 						float tmpX = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
 						float tmpY = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));
@@ -2748,9 +2861,15 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 					scale.y = ((scale.y > scene_extent * max_s_coefficients_clipping_threshold) ? scene_extent * max_s_coefficients_clipping_threshold : scale.y);
 					scale.z = ((scale.z > scene_extent * max_s_coefficients_clipping_threshold) ? scene_extent * max_s_coefficients_clipping_threshold : scale.z);
 
-					GC_2.w = -logf((1.0f / scale.x) - 1.0f);
+					// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+					/*GC_2.w = -logf((1.0f / scale.x) - 1.0f);
 					GC_3.x = -logf((1.0f / scale.y) - 1.0f);
-					GC_3.y = -logf((1.0f / scale.z) - 1.0f);
+					GC_3.y = -logf((1.0f / scale.z) - 1.0f);*/
+
+					// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+					GC_2.w = logf(scale.x);
+					GC_3.x = logf(scale.y);
+					GC_3.y = logf(scale.z);
 					
 					float tmpX = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R11 * R11) + (scale.y * scale.y * R12 * R12) + (scale.z * scale.z * R13 * R13)));
 					float tmpY = sqrtf(chi_square_squared_radius * ((scale.x * scale.x * R21 * R21) + (scale.y * scale.y * R22 * R22) + (scale.z * scale.z * R23 * R23)));

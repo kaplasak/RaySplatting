@@ -787,19 +787,24 @@ void PrepareScene() {
 			GC[i].mX = pfs.x;
 			GC[i].mY = pfs.y;
 			GC[i].mZ = pfs.z;
-			
-			
-			double sX = 0.5f / (1.0 + exp(-pfs.scale_0));
-			double sY = 0.5f / (1.0 + exp(-pfs.scale_1));
-			double sZ = 0.5f / (1.0 + exp(-pfs.scale_2));
 
-			//sX = sX * 2.0; // !!! !!! !!!
-			//sY = sY * 2.0; // !!! !!! !!!
-			//sZ = sZ * 2.0; // !!! !!! !!!
+			double sX = exp(pfs.scale_0);
+			double sY = exp(pfs.scale_1);
+			double sZ = exp(pfs.scale_2);
+
+			// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
+			/*if (sX > 0.99f) sX = 0.99f;
+			if (sY > 0.99f) sY = 0.99f;
+			if (sZ > 0.99f) sZ = 0.99f;
 
 			GC[i].sX = -log((1.0 / sX) - 1.0);
 			GC[i].sY = -log((1.0 / sY) - 1.0);
-			GC[i].sZ = -log((1.0 / sZ) - 1.0);
+			GC[i].sZ = -log((1.0 / sZ) - 1.0);*/
+
+			// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
+			GC[i].sX = pfs.scale_0;
+			GC[i].sY = pfs.scale_1;
+			GC[i].sZ = pfs.scale_2;
 
 			// *** *** *** *** ***
 
@@ -2419,8 +2424,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 									if (
 										(params_OptiX.epoch % config.saving_frequency == 0) ||
 										(params_OptiX.epoch == config.end_epoch)
-									)
+									) {
 										DumpParameters(params_OptiX);
+										DumpParametersToPLYFile(params_OptiX);
+									}
+
 									if (params_OptiX.epoch == config.end_epoch)
 										PostQuitMessage(0); // !!! !!! !!!
 
