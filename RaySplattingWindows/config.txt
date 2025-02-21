@@ -39,6 +39,11 @@ colmap                          <Data format (-1)>
 1000                            <Model evaluation frequency>
 0                               <Model evaluation epoch (5)>
 16777216                        <Maximum number of Gaussians per model threshold (6)>
+sphere.obj     <full path to .obj mesh>
+0.0 		< Position on the X-axis >
+0.0		<Position on the Z-axis >
+0.0 		< Position on the Y-axis>
+0		< material no. (now is only one) > 
 
 (-1) Can be either "blender" or "colmap".
 (0) Can be either "validation" or "training" (applicable only to the blender data set).
