@@ -7,6 +7,13 @@
 // !!! !!! !!!
 
 // *** *** *** *** ***
+struct MeshData {
+	char* filePath;
+	float xPos;
+	float zPos;
+	float yPos;
+	int material;
+};
 
 struct SCamera {
 	float Ox; float Oy; float Oz;
