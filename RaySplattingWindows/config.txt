@@ -46,4 +46,4 @@ blender                       <Data format (-1)>
 (3) If 0, initial parameters are obtained from pretrained model. Otherwise, they are loaded from the proprietary save file.
 (4) ... relative to the value of the scene extent's norm.
 (5) Evaluation is performed during every epoch congruent to <Model evaluation epoch> modulo <Model evaluation frequency>.
-(6) If after gradient update we obtain in total more Gaussians than this number, we break the training process, evaluate the model and save the parameters. Introduced to prevent the memory overrun.
+(6) If after gradient update we obtain in total more Gaussians than this number, we stop the densification process. Introduced to prevent the memory overrun.
