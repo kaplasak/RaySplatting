@@ -1091,21 +1091,30 @@ bool result;
 			int fCntOld = scene->fCnt;
 			int vCntOld = scene->vCnt;
 			int nCntOld = scene->nCnt;
-		scene->LoadOBJFile(meshConfig.filePath, meshConfig.material);
+			scene->LoadOBJFile("dragon_vrip.obj", 0);
 
-		// *** *** *** *** ***
+			// *** *** *** *** ***
 
-		SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
+			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
 
-		CMat4Df m = CMat4Df::Translation(
-			CVec3Df(
-				-0.5f * (sceneBounds.rB + sceneBounds.lB),
-				-0.5f * (sceneBounds.dB + sceneBounds.uB),
-				-0.5f * (sceneBounds.fB + sceneBounds.bB)
-			)
-		);
-		m = CMat4Df::Translation(CVec3Df(meshConfig.xPos, meshConfig.yPos, meshConfig.zPos));
-		scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+			CMat4Df m = CMat4Df::Translation(
+				CVec3Df(
+					-0.5f * (sceneBounds.rB + sceneBounds.lB),
+					-0.5f * (sceneBounds.dB + sceneBounds.uB),
+					-0.5f * (sceneBounds.fB + sceneBounds.bB)
+				)
+			);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::OXRotation(M_PI / 2.0f);
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
+			m = CMat4Df::Translation(CVec3Df(0.0f, -0.75f, 0.1f));
+			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
+
 			// *************************************************************************************
 
 			// garden
