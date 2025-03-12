@@ -101,5 +101,5 @@ On our test system, we used the following paths as the string literal passed to 
 
 "C:\Users\\\<Windows username>\source\repos\RaySplattingWindows\RaySplattingWindows"
 
-- In lines: 2 and 3 of the configuration file specify the location of the dataset main directory and the output 3DGS *.ply file obtained after short model pretraining;
+- In lines: 2 and 3 of the configuration file specify the location of the dataset main directory and the output 3DGS *.ply file obtained after short model pretraining (Important! With --sh_degree 0 as RaySplats uses the RGB model);
 - Run the "RaySplattingWindows" project from the Visual Studio IDE;
