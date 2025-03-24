@@ -5,7 +5,6 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 | :---- |
 | RaySplats: Ray Tracing based Gaussian Splatting [https://arxiv.org/pdf/2501.19196.pdf](http://arxiv.org/abs/2501.19196)|
 
-
 <img src=assets/gif1.gif height="300" class="center"> 
 <br>
 
@@ -22,6 +21,53 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
     <td><img src=assets/screenshot4.png height="200" width="300" class="center"> </td>
   </tr>
 </table>
+
+# RaySplatting Viewer
+![](assets/tutorial.mp4)
+
+This is a lightweight and user-friendly viewer for visualizing **RaySplatting** with additional user-loaded objects that support ray tracing. The viewer allows seamless integration of **OBJ** and **PLY (ASCII format)** files into the scene.  
+
+The current material system is optimized for models designed to be **reflective** or **glass-like**, making it ideal for rendering high-quality visuals with realistic light interactions.  
+
+## System Requirements  
+
+To use this viewer, ensure your system meets the following requirements:  
+
+- **Operating System**: Windows  
+- **GPU**: NVIDIA RTX 20xx series or higher (**RTX 30xx+ recommended**)  
+- **CUDA Version**: 12.4 or later  
+- **Required DLLs**: Place the following files in the directory:  
+  ```plaintext
+  C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin
+  ```
+  - `cudart64_12.dll`  
+  - `cufft64_11.dll`  
+
+## Installation & Usage  
+
+1. Download the provided **ZIP file**.  [Download ZIP](https://link-url-here.orghttps://drive.google.com/file/d/1XPivZb6-dVtuwQ3T9UrxOF2gTTnerGhp/view?usp=sharing)
+2. Extract the contents.  
+3. Run the **exe file**—no additional setup required!  
+4. Modify mesh properties in **mesh_config.txt**.  
+5. Change the base scene by editing the **PLY file path** in `config.txt`.  
+
+## Controls  
+
+- **Double Left Click**: Enter movement mode.  
+- **Movement**: Use **WASD** and mouse to navigate the scene.  
+
+## Future Features  
+
+We are actively developing new features, including:  
+- **Enhanced mesh transformations** (scaling, rotation, position editing beyond `mesh_config.txt`)  
+- **Screenshot capture** for rendered scenes  
+- **View presets** to allow seamless switching between different perspectives  
+- **And much more!**  
+
+Stay tuned for updates and improvements!
+
+# Learning 
+
 
 
 
@@ -103,3 +149,6 @@ On our test system, we used the following paths as the string literal passed to 
 
 - In lines: 2 and 3 of the configuration file specify the location of the dataset main directory and the output 3DGS *.ply file obtained after short model pretraining (Important! With --sh_degree 0 as RaySplats uses the RGB model);
 - Run the "RaySplattingWindows" project from the Visual Studio IDE;
+
+
+
