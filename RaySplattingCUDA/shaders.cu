@@ -28,6 +28,12 @@ struct LaunchParams {
 	float last_significant_Gauss_alpha_gradient_precision;
 	float chi_square_squared_radius;
 	int max_Gaussians_per_ray;
+
+	float bg_color_R;
+	float bg_color_G;
+	float bg_color_B;
+
+	bool inference;
 };
 
 // *************************************************************************************************
@@ -36,8 +42,20 @@ extern "C" __constant__ LaunchParams optixLaunchParams;
 
 // *************************************************************************************************
 
+struct SRayPayload {
+	float T_approx;
+	int Gauss_num;
+	bool threshold_exceeded;
+	float max_t_value_encountered_so_far;
+
+	float t_array[256];
+	int Gauss_ind_array[256];
+	float alpha_array[256];
+};
+
 extern "C" __global__ void __raygen__renderFrame() {
-	int x = optixGetLaunchIndex().x;
+	// v1
+	/*int x = optixGetLaunchIndex().x;
 	int y = optixGetLaunchIndex().y;
 	int pixel_ind = (y * optixLaunchParams.width) + x;
 	
@@ -129,11 +147,19 @@ extern "C" __global__ void __raygen__renderFrame() {
 			T = T - tmp;
 
 			if (T < ((REAL_R)optixLaunchParams.ray_termination_T_threshold)) {
-				if (!belowThreshold) belowThreshold = true;
-				else
+				if (!belowThreshold) {
+					belowThreshold = true;
+					T = 0;
+				} else
 					TLastGrad = TLastGrad * (1 - alpha);
+
+				if (optixLaunchParams.inference) {
+					if (i < optixLaunchParams.max_Gaussians_per_ray - 1)
+						optixLaunchParams.Gaussians_indices[((i + 1) * optixLaunchParams.width * optixLaunchParams.height) + pixel_ind] = -1;
+					break;
+				}
 			}
-			if (TLastGrad >= ((REAL_R)optixLaunchParams.last_significant_Gauss_alpha_gradient_precision)) {					
+			if (TLastGrad >= ((REAL_R)optixLaunchParams.last_significant_Gauss_alpha_gradient_precision)) {			
 				float t = __uint_as_float(t_as_uint);
 				tMin = nextafter(t, INFINITY);
 			} else {
@@ -144,6 +170,11 @@ extern "C" __global__ void __raygen__renderFrame() {
 		} else
 			break;
 	}
+
+	// We take into account the background color
+	R = R + (optixLaunchParams.bg_color_R * T);
+	G = G + (optixLaunchParams.bg_color_G * T);
+	B = B + (optixLaunchParams.bg_color_B * T);
 
 	// !!! !!! !!!
 	//R = ((REAL_R)i) / optixLaunchParams.max_Gaussians_per_ray;
@@ -175,18 +206,189 @@ extern "C" __global__ void __raygen__renderFrame() {
 	optixLaunchParams.bitmap[pixel_ind] = (Ri << 16) + (Gi << 8) + Bi;
 	optixLaunchParams.bitmap_out_R[(y * (optixLaunchParams.width + 11 - 1)) + x] = R; // !!! !!! !!!
 	optixLaunchParams.bitmap_out_G[(y * (optixLaunchParams.width + 11 - 1)) + x] = G; // !!! !!! !!!
+	optixLaunchParams.bitmap_out_B[(y * (optixLaunchParams.width + 11 - 1)) + x] = B; // !!! !!! !!!*/
+
+	// *** *** *** *** ***
+
+	// v2
+	int x = optixGetLaunchIndex().x;
+	int y = optixGetLaunchIndex().y;
+	int pixel_ind = (y * optixLaunchParams.width) + x;
+
+	REAL3_R d = make_REAL3_R(
+	(((REAL_R)-0.5) + ((x + ((REAL_R)0.5)) / optixLaunchParams.width)) * optixLaunchParams.double_tan_half_fov_x,
+	(((REAL_R)-0.5) + ((y + ((REAL_R)0.5)) / optixLaunchParams.height)) * optixLaunchParams.double_tan_half_fov_y,
+	1,
+	);
+	REAL3_R v = make_REAL3_R(
+		MAD_R(optixLaunchParams.R.x, d.x, MAD_R(optixLaunchParams.D.x, d.y, optixLaunchParams.F.x * d.z)),
+		MAD_R(optixLaunchParams.R.y, d.x, MAD_R(optixLaunchParams.D.y, d.y, optixLaunchParams.F.y * d.z)),
+		MAD_R(optixLaunchParams.R.z, d.x, MAD_R(optixLaunchParams.D.z, d.y, optixLaunchParams.F.z * d.z))
+	);
+
+	// *** *** *** *** ***
+
+	SRayPayload rp;
+
+	unsigned long long rp_addr = ((unsigned long long)&rp);
+	unsigned rp_addr_lo = rp_addr;
+	unsigned rp_addr_hi = rp_addr >> 32;
+
+	// *** *** *** *** ***
+
+	rp.Gauss_num = 0;
+	rp.T_approx = 1.0f;
+	rp.max_t_value_encountered_so_far = -INFINITY;
+	rp.threshold_exceeded = false;
+
+	optixTrace(
+		optixLaunchParams.traversable,
+		optixLaunchParams.O,
+		v,
+		0.0f,
+		INFINITY,
+		0.0f,
+		OptixVisibilityMask(255),
+		OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT, //OPTIX_RAY_FLAG_NONE
+		0,
+		1,
+		0,
+
+		rp_addr_lo,
+		rp_addr_hi
+	);
+
+	// *** *** *** *** ***
+
+	for (int i = 1; i < rp.Gauss_num; ++i) {
+		float t1 = rp.t_array[i];
+		int ind1 = rp.Gauss_ind_array[i];
+		float alpha1 = rp.alpha_array[i];
+
+		int j;
+		for (j = i; j > 0; --j) {
+			float t2 = rp.t_array[j - 1];
+			int ind2 = rp.Gauss_ind_array[j - 1];
+			float alpha2 = rp.alpha_array[j - 1];
+
+			if (t1 < t2) {
+				rp.t_array[j] = t2;
+				rp.Gauss_ind_array[j] = ind2;
+				rp.alpha_array[j] = alpha2;
+			} else
+				break;
+		}
+		if (j < i) {
+			rp.t_array[j] = t1;
+			rp.Gauss_ind_array[j] = ind1;
+			rp.alpha_array[j] = alpha1;
+		}
+	}
+	if (rp.Gauss_num > optixLaunchParams.max_Gaussians_per_ray)
+		rp.Gauss_num = optixLaunchParams.max_Gaussians_per_ray;
+
+	// *** *** *** *** ***
+
+	float R = 0.0f;
+	float G = 0.0f;
+	float B = 0.0f;
+	float T = 1.0f;
+
+	int i;
+	for (i = 0; i < rp.Gauss_num; ++i) {
+		int ind = rp.Gauss_ind_array[i];
+		float alpha = rp.alpha_array[i];
+		float4 GC_1 = optixLaunchParams.GC_part_1[ind];
+		optixLaunchParams.Gaussians_indices[(i * optixLaunchParams.width * optixLaunchParams.height) + pixel_ind] = ind;
+
+		float tmp = T * alpha;
+		R = R + (GC_1.x * tmp);
+		G = G + (GC_1.y * tmp);
+		B = B + (GC_1.z * tmp);
+		T = T * (1.0f - alpha);
+
+		if (T < optixLaunchParams.ray_termination_T_threshold) break;
+	}
+	if (i < rp.Gauss_num) {
+		if (i < optixLaunchParams.max_Gaussians_per_ray - 1)
+			optixLaunchParams.Gaussians_indices[((i + 1) * optixLaunchParams.width * optixLaunchParams.height) + pixel_ind] = -1;
+	} else {
+		if (rp.Gauss_num < optixLaunchParams.max_Gaussians_per_ray)
+			optixLaunchParams.Gaussians_indices[(rp.Gauss_num * optixLaunchParams.width * optixLaunchParams.height) + pixel_ind] = -1;
+	}
+
+	R = __saturatef(R);
+	G = __saturatef(G);
+	B = __saturatef(B);
+	
+	int Ri = RINT_R(R * 255);
+	int Gi = RINT_R(G * 255);
+	int Bi = RINT_R(B * 255);
+
+	optixLaunchParams.bitmap[pixel_ind] = (Ri << 16) + (Gi << 8) + Bi;
+	optixLaunchParams.bitmap_out_R[(y * (optixLaunchParams.width + 11 - 1)) + x] = R; // !!! !!! !!!
+	optixLaunchParams.bitmap_out_G[(y * (optixLaunchParams.width + 11 - 1)) + x] = G; // !!! !!! !!!
 	optixLaunchParams.bitmap_out_B[(y * (optixLaunchParams.width + 11 - 1)) + x] = B; // !!! !!! !!!
 }
 
 // *************************************************************************************************
 
 extern "C" __global__ void __anyhit__radiance() {
+	unsigned Gauss_ind = optixGetPrimitiveIndex();
+	float4 GC_1 = optixLaunchParams.GC_part_1[Gauss_ind];
+
+	// *** *** *** *** ***
+
+	SRayPayload *rp;
+
+	unsigned long long rp_addr_lo = optixGetPayload_0();
+	unsigned long long rp_addr_hi = optixGetPayload_1();
+	*((unsigned long long *)&rp) = rp_addr_lo + (rp_addr_hi << 32);
+
+	// *** *** *** *** ***
+
+	float tMin = optixGetRayTmax();
+	float T_approx = rp->T_approx;
+	int Gauss_num = rp->Gauss_num;
+
+	if ((!rp->threshold_exceeded) && (tMin >= rp->max_t_value_encountered_so_far))
+		rp->max_t_value_encountered_so_far = tMin;
+	
+	float O_perp_squared_norm = __uint_as_float(optixGetAttribute_0());
+	float s = __uint_as_float(optixGetAttribute_1());
+	O_perp_squared_norm = O_perp_squared_norm / s;
+
+	REAL_R alpha = EXP_R(-((REAL_R)0.5) * O_perp_squared_norm);
+	alpha = alpha / (((REAL_R)1.0) + EXP_R(-GC_1.w));
+	T_approx = T_approx * (1 - alpha);
+
+	if ((T_approx < optixLaunchParams.ray_termination_T_threshold) || (Gauss_num >= optixLaunchParams.max_Gaussians_per_ray))
+		rp->threshold_exceeded = true;
+	
+	// *** *** *** *** ***
+
+	if (
+		(Gauss_num < 256) && (
+			(!rp->threshold_exceeded) ||
+			(tMin <= rp->max_t_value_encountered_so_far)
+		)
+	) {
+		rp->T_approx = T_approx;
+		rp->Gauss_num = Gauss_num + 1;
+
+		rp->t_array[Gauss_num] = tMin;
+		rp->Gauss_ind_array[Gauss_num] = Gauss_ind;
+		rp->alpha_array[Gauss_num] = alpha;
+				
+		optixIgnoreIntersection();
+	}
 }
 
 // *************************************************************************************************
 
 extern "C" __global__ void __closesthit__radiance() {
-	unsigned Gauss_ind = optixGetPrimitiveIndex();
+	// v1
+	/*unsigned Gauss_ind = optixGetPrimitiveIndex();
 	optixSetPayload_0(Gauss_ind);
 	optixSetPayload_1(__float_as_uint(optixGetRayTmax()));
 	
@@ -205,7 +407,7 @@ extern "C" __global__ void __closesthit__radiance() {
 
 		optixSetPayload_2((unsigned)__double2loint(O_perp_squared_norm));
 		optixSetPayload_3((unsigned)__double2hiint(O_perp_squared_norm));
-	#endif
+	#endif*/
 }
 
 // *************************************************************************************************
@@ -282,7 +484,8 @@ extern "C" __global__ void __intersection__is() {
 	REAL_R O_dot_v = MAD_R(Ox_prim, vx_prim, MAD_R(Oy_prim, vy_prim, Oz_prim * vz_prim));
 	REAL_R O_dot_O = MAD_R(Ox_prim, Ox_prim, MAD_R(Oy_prim, Oy_prim, Oz_prim * Oz_prim));
 
-	REAL_R tmp1 = 1 / v_dot_v;
+	// v1
+	/*REAL_R tmp1 = 1 / v_dot_v;
 	REAL_R tmp2 = O_dot_v * tmp1;
 
 	REAL_R O_perp_x = MAD_R(-vx_prim, tmp2, Ox_prim);
@@ -310,7 +513,35 @@ extern "C" __global__ void __intersection__is() {
 				(unsigned)__double2loint(s),
 				(unsigned)__double2hiint(s)
 			#endif
-			
+		);
+	}*/
+
+	// v2
+	REAL_R tmp = 1 / v_dot_v;
+	REAL_R t = -O_dot_v * tmp;
+
+	REAL_R O_perp_x = MAD_R(vx_prim, t, Ox_prim);
+	REAL_R O_perp_y = MAD_R(vy_prim, t, Oy_prim);
+	REAL_R O_perp_z = MAD_R(vz_prim, t, Oz_prim);
+
+	s = s * s; // !!! !!! !!!
+
+	REAL_R O_perp_squared_norm = MAD_R(O_perp_x, O_perp_x, MAD_R(O_perp_y, O_perp_y, O_perp_z * O_perp_z));
+	REAL_R delta = (optixLaunchParams.chi_square_squared_radius * s) - O_perp_squared_norm;
+
+	if (delta >= 0) {
+		optixReportIntersection(
+			((float)t),
+			0,
+			#ifndef RENDERER_OPTIX_USE_DOUBLE_PRECISION
+				__float_as_uint(O_perp_squared_norm),
+				__float_as_uint(s)
+			#else
+				(unsigned)__double2loint(O_perp_squared_norm),
+				(unsigned)__double2hiint(O_perp_squared_norm),
+				(unsigned)__double2loint(s),
+				(unsigned)__double2hiint(s)
+			#endif
 		);
 	}
 }

@@ -37,6 +37,9 @@ __constant__ float scene_extent;
 
 // *************************************************************************************************
 
+float bg_color_R_host;
+float bg_color_G_host;
+float bg_color_B_host;
 int densification_frequency_host;
 int densification_start_epoch_host;
 int densification_end_epoch_host;
@@ -47,6 +50,10 @@ float last_significant_Gauss_alpha_gradient_precision_host;
 float chi_square_squared_radius_host; 
 int max_Gaussians_per_ray_host;
 int max_Gaussians_per_model_host;
+
+__constant__ float bg_color_R;
+__constant__ float bg_color_G;
+__constant__ float bg_color_B;
 
 __constant__ float lr_RGB;
 __constant__ float lr_RGB_exponential_decay_coefficient;
@@ -117,6 +124,12 @@ struct LaunchParams {
 	float last_significant_Gauss_alpha_gradient_precision;
 	float chi_square_squared_radius;
 	int max_Gaussians_per_ray;
+
+	float bg_color_R;
+	float bg_color_G;
+	float bg_color_B;
+
+	bool inference;
 };
 
 // *************************************************************************************************
@@ -212,14 +225,14 @@ bool InitializeOptiXRenderer(
 	OptixModuleCompileOptions moduleCompileOptions = {};
 	OptixPipelineCompileOptions pipelineCompileOptions = {};
 
-	moduleCompileOptions.maxRegisterCount = 50;
+	moduleCompileOptions.maxRegisterCount = 40; // 50
 	moduleCompileOptions.optLevel = OPTIX_COMPILE_OPTIMIZATION_DEFAULT;
 	moduleCompileOptions.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
 
 	pipelineCompileOptions.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS;
 	pipelineCompileOptions.usesMotionBlur = false;
 #ifndef RENDERER_OPTIX_USE_DOUBLE_PRECISION
-	pipelineCompileOptions.numPayloadValues = 3;
+	pipelineCompileOptions.numPayloadValues = 2; // 3; // !!! !!! !!!
 	pipelineCompileOptions.numAttributeValues = 2;
 #else
 	pipelineCompileOptions.numPayloadValues = 4;
@@ -284,8 +297,8 @@ bool InitializeOptiXRenderer(
 
 	OptixProgramGroupDesc pgDesc_hitgroup = {};
 	pgDesc_hitgroup.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
-	//pgDesc_hitgroup.hitgroup.moduleAH            = module; // !!! !!! !!!
-	//pgDesc_hitgroup.hitgroup.entryFunctionNameAH = "__anyhit__radiance"; // !!! !!! !!!
+	pgDesc_hitgroup.hitgroup.moduleAH            = module; // !!! !!! !!!
+	pgDesc_hitgroup.hitgroup.entryFunctionNameAH = "__anyhit__radiance"; // !!! !!! !!!
 	pgDesc_hitgroup.hitgroup.moduleCH            = module;           
 	pgDesc_hitgroup.hitgroup.entryFunctionNameCH = "__closesthit__radiance";
 	pgDesc_hitgroup.hitgroup.moduleIS            = module;
@@ -322,9 +335,9 @@ bool InitializeOptiXRenderer(
 
 	error_OptiX = optixPipelineSetStackSize(
 		params_OptiX.pipeline, 
-		2*1024,
-		2*1024,
-		2*1024,
+		0,
+		0,
+		2*1024 * 2, // !!! !!! !!!
 		1
 	);
 	if (error_OptiX != OPTIX_SUCCESS) goto Error;
@@ -1275,6 +1288,10 @@ bool RenderOptiX(SOptiXRenderParams& params_OptiX) {
 	launchParams.last_significant_Gauss_alpha_gradient_precision = last_significant_Gauss_alpha_gradient_precision_host; // !!! !!! !!!
 	launchParams.chi_square_squared_radius = chi_square_squared_radius_host; // !!! !!! !!!
 	launchParams.max_Gaussians_per_ray = max_Gaussians_per_ray_host; // !!! !!! !!!
+	launchParams.bg_color_R = bg_color_R_host;
+	launchParams.bg_color_G = bg_color_G_host;
+	launchParams.bg_color_B = bg_color_B_host;
+	launchParams.inference = params_OptiX.copyBitmapToHostMemory; // !!! !!! !!!
 
 	void *launchParamsBuffer;
 	error_CUDA = cudaMalloc(&launchParamsBuffer, sizeof(LaunchParams) * 1);
@@ -1537,9 +1554,11 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 
 			// !!! !!! !!!
 			if ((T * (1 - alpha_next) < ((REAL)ray_termination_T_threshold)) || isnan(tmp3)) {
-				dI_dalpha = MAD_G(GC_1.x, d_dR_dalpha, MAD_G(GC_1.y, d_dG_dalpha, GC_1.z * d_dB_dalpha)); // !!! !!! !!!
-				
-				if (k < max_Gaussians_per_ray) break; // !!! !!! !!!
+				if (k < max_Gaussians_per_ray) {
+					dI_dalpha = MAD_G(GC_1.x, d_dR_dalpha, MAD_G(GC_1.y, d_dG_dalpha, GC_1.z * d_dB_dalpha)); // !!! !!! !!!
+					break; // !!! !!! !!!
+				} else
+					dI_dalpha = MAD_G(GC_1.x - bg_color_R, d_dR_dalpha, MAD_G(GC_1.y - bg_color_G, d_dG_dalpha, (GC_1.z - bg_color_B) * d_dB_dalpha)); // !!! !!! !!!
 				
 				tmp3 = dI_dalpha; // !!! !!! !!!
 			}
@@ -1876,6 +1895,8 @@ __global__ void ComputeGradient(SOptiXRenderParams params_OptiX) {
 				d_dG_dalpha = d_dG_dalpha * tmp2;
 				d_dB_dalpha = d_dB_dalpha * tmp2;
 			}
+
+			dI_dalpha = dI_dalpha - MAD_G(bg_color_R, d_dR_dalpha, MAD_G(bg_color_G, d_dG_dalpha, bg_color_B * d_dB_dalpha)); // !!! !!! !!!
 
 			// *************************************************************************************
 
@@ -2358,8 +2379,9 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams params_OptiX) {
 
 		// alpha
 		GC_1.w -= ((lr * (m1.w * tmp1)) / (sqrtf(v1.w * tmp2) + epsilon));
-
 		isOpaqueEnough = (GC_1.w >= alpha_threshold_for_Gauss_removal);
+		if ((GC_1.w < alpha_threshold_for_Gauss_removal) && ((params_OptiX.epoch > densification_end_epoch) || (params_OptiX.numberOfGaussians > max_Gaussians_per_model)))
+			GC_1.w = alpha_threshold_for_Gauss_removal;
 
 		// *****************************************************************************************
 
@@ -4277,6 +4299,13 @@ Error:
 // *************************************************************************************************
 
 bool SetConfigurationOptiX(SOptiXRenderConfig& config_OptiX) {
+	cudaMemcpyToSymbol(bg_color_R, &config_OptiX.bg_color_R, sizeof(float));
+	bg_color_R_host = config_OptiX.bg_color_R;
+	cudaMemcpyToSymbol(bg_color_G, &config_OptiX.bg_color_G, sizeof(float));
+	bg_color_G_host = config_OptiX.bg_color_G;
+	cudaMemcpyToSymbol(bg_color_B, &bg_color_B, sizeof(float));
+	bg_color_B_host = config_OptiX.bg_color_B;
+
 	cudaMemcpyToSymbol(lr_RGB, &config_OptiX.lr_RGB, sizeof(float));
 	cudaMemcpyToSymbol(lr_RGB_exponential_decay_coefficient, &config_OptiX.lr_RGB_exponential_decay_coefficient, sizeof(float));
 	cudaMemcpyToSymbol(lr_RGB_final, &config_OptiX.lr_RGB_final, sizeof(float));

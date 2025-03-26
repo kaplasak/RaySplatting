@@ -384,6 +384,10 @@ struct SOptiXRenderConfig {
 	int start_epoch;
 	int end_epoch;
 
+	float bg_color_R;
+	float bg_color_G;
+	float bg_color_B;
+
 	float lr_RGB;
 	float lr_RGB_exponential_decay_coefficient;
 	float lr_RGB_final;

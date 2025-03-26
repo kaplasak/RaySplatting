@@ -42,6 +42,9 @@ BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
+LARGE_INTEGER lpFrequency;
+double training_time = 0.0f;
+
 //   -*-   -*-   -*-   -*-   -*-
 
 int mouseX;
@@ -356,6 +359,18 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	// (4) End epoch
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%d", &config.end_epoch, 256);
+
+	// (??) Background color R component
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.bg_color_R, 256);
+
+	// (??) Background color G component
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.bg_color_G, 256);
+
+	// (??) Background color B component
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.bg_color_B, 256);
 
 	// *********************************************************************************************
 
@@ -802,9 +817,9 @@ void PrepareScene() {
 			GC[i].sZ = -log((1.0 / sZ) - 1.0);*/
 
 			// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
-			GC[i].sX = pfs.scale_0;
-			GC[i].sY = pfs.scale_1;
-			GC[i].sZ = pfs.scale_2;
+			GC[i].sX = pfs.scale_0; // !!! !!! !!!
+			GC[i].sY = pfs.scale_1; // !!! !!! !!!
+			GC[i].sZ = pfs.scale_2; // !!! !!! !!!
 
 			// *** *** *** *** ***
 
@@ -1061,7 +1076,7 @@ bool result;
 
 		float lB, rB, uB, dB, bB, fB, scene_extent;
 		GetSceneBoundsOptiX(lB, rB, uB, dB, bB, fB, scene_extent);
-		swprintf(consoleBuffer, 256, L"EXTENT INITIAL: %f %f %f", rB - lB, dB - uB, fB - bB);
+		swprintf(consoleBuffer, 256, L"EXTENT INITIAL: %f %f %f\n", rB - lB, dB - uB, fB - bB);
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
 		swprintf(consoleBuffer, 256, L"%d\n", params_OptiX.width);
@@ -1896,6 +1911,10 @@ bool result;
 
 	//**********************************************************************************************
 
+	QueryPerformanceFrequency(&lpFrequency);
+
+	//**********************************************************************************************
+
 	char buffer[256];
 
 	sprintf_s(buffer, "GaussianRandering - Pose: %d / %d", poseNum_rendering + 1, NUMBER_OF_POSES);
@@ -2164,19 +2183,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								if (false) { // !!! !!! !!!
 							#else
 								if (!cameraChanged) {
-							#endif
-								//break;
+								//if (false) {
+							#endif				
+								// OptiX
+								// !!! !!! !!!
+								LARGE_INTEGER lpPerformanceCount1;
+								QueryPerformanceCounter(&lpPerformanceCount1);
+								// !!! !!! !!!
+
 								int poseNum_traininggg = poses_indices[0 + poseNum_training];
-								
 								bool result;
 
-								
-								
-								
-								// OptiX
 								result = ZeroGradientOptiX(params_OptiX);
+
+								// !!! !!! !!!
+								LARGE_INTEGER lpPerformanceCount2;
+								QueryPerformanceCounter(&lpPerformanceCount2);
+								training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
+								// !!! !!! !!!
+
 								swprintf(consoleBuffer, 256, L"Zero OptiX gradient: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+								// !!! !!! !!!
+								QueryPerformanceCounter(&lpPerformanceCount1);
+								// !!! !!! !!!
 
 								// OptiX
 								params_OptiX.O.x = poses[poseNum_traininggg].Ox; params_OptiX.O.y = poses[poseNum_traininggg].Oy; params_OptiX.O.z = poses[poseNum_traininggg].Oz;
@@ -2189,6 +2220,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								params_OptiX.copyBitmapToHostMemory = false;
 
 								result = RenderOptiX(params_OptiX);
+
+								// !!! !!! !!!
+								QueryPerformanceCounter(&lpPerformanceCount2);
+								training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
+								// !!! !!! !!!
+
 								swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
@@ -2220,7 +2257,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 									// OptiX
 									int state;
 
+									// !!! !!! !!!
+									LARGE_INTEGER lpPerformanceCount1;
+									QueryPerformanceCounter(&lpPerformanceCount1);
+									// !!! !!! !!!
+
 									result = UpdateGradientOptiX(params_OptiX, state);
+
+									// !!! !!! !!!
+									LARGE_INTEGER lpPerformanceCount2;
+									QueryPerformanceCounter(&lpPerformanceCount2);
+									training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
+									// !!! !!! !!!
+
 									swprintf(consoleBuffer, 256, L"Update gradient OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
@@ -2316,6 +2365,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 									) {
 										double MSE = 0.0;
 										double PSNR = 0.0;
+										double FPS = 0.0;
 										for (int pose = 0; pose < NUMBER_OF_POSES_TEST; ++pose) {
 											double poseMSE = 0.0;
 
@@ -2325,9 +2375,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 											params_OptiX.F.x = poses_test[pose].Fx; params_OptiX.F.y = poses_test[pose].Fy; params_OptiX.F.z = poses_test[pose].Fz;
 											params_OptiX.copyBitmapToHostMemory = true;
 
+											// *** *** *** *** ***
+
+											LARGE_INTEGER lpPerformanceCount1;
+											LARGE_INTEGER lpPerformanceCount2;
+
+											QueryPerformanceCounter(&lpPerformanceCount1);
 											result = RenderOptiX(params_OptiX);
+											QueryPerformanceCounter(&lpPerformanceCount2);
 											//swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 											//WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+											// *** *** *** *** ***
 
 											for (int i = 0; i < params_OptiX.height; ++i) {
 												for (int j = 0; j < params_OptiX.width; ++j) {
@@ -2353,18 +2412,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 											poseMSE /= 3.0 * params_OptiX.width * params_OptiX.height;
 											double posePSNR = -10.0 * (log(poseMSE) / log(10.0));
 
-											swprintf(consoleBuffer, 256, L"TEST POSE: %d, PSNR: %.30lf;\n", pose + 1, posePSNR);
+											double poseFPS = *((long long int *) &lpFrequency) / ((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1)));
+											swprintf(consoleBuffer, 256, L"TEST POSE: %d, PSNR: %.30lf, FPS: %.4lf;\n", pose + 1, posePSNR, poseFPS);
 											WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 											
+											FPS += poseFPS;
 											MSE += poseMSE;
 											PSNR += posePSNR;
 										}
+										FPS /= NUMBER_OF_POSES_TEST;
 										MSE /= NUMBER_OF_POSES_TEST;
 										PSNR /= NUMBER_OF_POSES_TEST;
 										
 										swprintf(consoleBuffer, 256, L"MSE TEST: %.30lf;\n", MSE);
 										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 										swprintf(consoleBuffer, 256, L"PSNR TEST: %.30lf;\n", PSNR);
+										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+										swprintf(consoleBuffer, 256, L"FPS TEST: %.4lf;\n", FPS);
 										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
 										FILE *f;
@@ -2375,6 +2439,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 										
 										fopen_s(&f, "PSNR_Test.txt", "at");
 										fprintf(f, "%d: %.30lf,\n", epochNum, PSNR);
+										fclose(f);
+
+										fopen_s(&f, "FPS_Test.txt", "at");
+										fprintf(f, "%d: %.4lf,\n", epochNum, FPS);
 										fclose(f);
 									}
 									// !!! !!! !!!
@@ -2403,6 +2471,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 									// *** *** ***
 
+									// !!! !!! !!!
+									QueryPerformanceCounter(&lpPerformanceCount1);
+									// !!! !!! !!!
+
 									++epochNum;
 									if (poseNum_training < NUMBER_OF_POSES - 1) {
 										++poseNum_training;
@@ -2419,6 +2491,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 										poseNum_training = 0;
 									}
 
+									// !!! !!! !!!
+									QueryPerformanceCounter(&lpPerformanceCount2);
+									training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
+									// !!! !!! !!!
+
 									// *** *** *** *** ***
 
 									if (
@@ -2427,6 +2504,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 									) {
 										DumpParameters(params_OptiX);
 										DumpParametersToPLYFile(params_OptiX);
+
+										FILE *f;
+
+										fopen_s(&f, "Training_Time.txt", "at");
+										fprintf(f, "%d: %.2lf,\n", params_OptiX.epoch, training_time);
+										fclose(f);
 									}
 
 									if (params_OptiX.epoch == config.end_epoch)
