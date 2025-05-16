@@ -1,4 +1,4 @@
-# RaySplats: Ray Tracing based Gaussian Splatting
+![image](https://github.com/user-attachments/assets/9a9d61cb-f54a-4301-8a52-4c2d0ce2cc72)# RaySplats: Ray Tracing based Gaussian Splatting
 Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądziołka, Dawid Baran, Przemysław Spurek <br>
 
 | arXiv |
@@ -45,7 +45,7 @@ To use this viewer, ensure your system meets the following requirements:
 
 ## Installation & Usage  
 
-1. Download the provided **ZIP file**.  [Download ZIP](https://link-url-here.orghttps://drive.google.com/file/d/1XPivZb6-dVtuwQ3T9UrxOF2gTTnerGhp/view?usp=sharing)
+1. Download the provided **ZIP file**.  [Download ZIP](https://drive.google.com/file/d/1XPivZb6-dVtuwQ3T9UrxOF2gTTnerGhp/view?usp=sharing)
 2. Extract the contents.  
 3. Run the **exe file**—no additional setup required!  
 4. Modify mesh properties in **mesh_config.txt**.  
