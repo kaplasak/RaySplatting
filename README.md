@@ -24,7 +24,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 
 # Features
 - Spherical harmonics support up to the degree **4**.
-- Interactive Windows viewer / optimizer application allowing to preview the trained model state in real time.
+- Interactive Windows viewer / optimizer application allowing to preview the trained model state in the real time.
 - Highly efficient pure Gaussian renderer (no embedding primitive mesh approximation).
 - Highly configurable optimizer based on the convenient configuration file.
 - Support for both the **Blender** and **COLMAP** data sets (after some preprocessing by the 3DGS).
