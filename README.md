@@ -5,6 +5,13 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 | :---- |
 | RaySplats: Ray Tracing based Gaussian Splatting [https://arxiv.org/pdf/2501.19196.pdf](http://arxiv.org/abs/2501.19196)|
 
+# Features
+- Spherical harmonics support up to the degree **4**.
+- Interactive Windows viewer / optimizer application allowing to preview the trained model state in real time.
+- Highly efficient pure Gaussian renderer (no embedding primitive mesh approximation).
+- Highly configurable optimizer based on the convenient configuration file.
+- Support for both the **Blender** and **COLMAP** data sets (after some preprocessing by the 3DGS).
+
 <img src=assets/gif1.gif height="300" class="center"> 
 <br>
 
