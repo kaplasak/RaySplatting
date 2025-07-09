@@ -153,8 +153,8 @@ On our test system, we used the following paths as the string literal passed to 
 
 ## Controls in the interactive Windows viewer / optimizer application
 
-- **Double Left Click**: Toggle between the **static camera** and **free roam** mode.
-- **Mouse Movement**: Rotate camera in the **free roam** mode.
+- **Double Left Click**: Toggle between the **static camera** and the **free roam** mode.
+- **Mouse Movement**: Rotate the camera in the **free roam** mode.
 - **W / S**: Move forward / backward.
 - **A / D**: Step left / right.
 - **Spacebar / C**: Move up / down.
