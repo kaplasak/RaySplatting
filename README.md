@@ -82,7 +82,7 @@ We are actively developing new features, including:
 
 Stay tuned for updates and improvements!
 
-# Learning
+# Building the interactive Windows viewer / optimizer application
 
 1. Prerequisites:
 -----------------
