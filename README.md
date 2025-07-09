@@ -39,50 +39,6 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 - **Spacebar / C**: Move up / down.
 - **[ / ]**: Switch the camera to the previous / next training pose.
 
-# RaySplatting Viewer
-![image](https://github.com/user-attachments/assets/9a9d61cb-f54a-4301-8a52-4c2d0ce2cc72)
-![](assets/tutorial.mp4)
-
-This is a lightweight and user-friendly viewer for visualizing **RaySplatting** with additional user-loaded objects that support ray tracing. The viewer allows seamless integration of **OBJ** and **PLY (ASCII format)** files into the scene.  
-
-The current material system is optimized for models designed to be **reflective** or **glass-like**, making it ideal for rendering high-quality visuals with realistic light interactions.  
-
-## System Requirements  
-
-To use this viewer, ensure your system meets the following requirements:  
-
-- **Operating System**: Windows  
-- **GPU**: NVIDIA RTX 20xx series or higher (**RTX 30xx+ recommended**)  
-- **CUDA Version**: 12.4 or later  
-- **Required DLLs**: Place the following files in the directory:  
-  ```plaintext
-  C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin
-  ```
-  - `cudart64_12.dll`  
-  - `cufft64_11.dll`  
-
-## Installation & Usage  
-
-1. Download the provided **ZIP file**.  [Download ZIP](https://drive.google.com/file/d/1XPivZb6-dVtuwQ3T9UrxOF2gTTnerGhp/view?usp=sharing)
-2. Extract the contents.  
-3. Run the **exe file**—no additional setup required!  
-4. Modify mesh properties in **mesh_config.txt**.  
-5. Change the base scene by editing the **PLY file path** in `config.txt`.  
-
-## Controls  
-
-- Exactly the same as in the interactive Windows viewer / optimizer application.
-
-## Future Features  
-
-We are actively developing new features, including:  
-- **Enhanced mesh transformations** (scaling, rotation, position editing beyond `mesh_config.txt`)  
-- **Screenshot capture** for rendered scenes  
-- **View presets** to allow seamless switching between different perspectives  
-- **And much more!**  
-
-Stay tuned for updates and improvements!
-
 # Prerequisites:
 
 - Visual Studio 2019 Enterprise;
@@ -160,6 +116,50 @@ Stay tuned for updates and improvements!
   R' = (R + 0.5) / 256<br>
   G' = (G + 0.5) / 256<br>
   B' = (B + 0.5) / 256<br>
+
+# RaySplatting Viewer
+![image](https://github.com/user-attachments/assets/9a9d61cb-f54a-4301-8a52-4c2d0ce2cc72)
+![](assets/tutorial.mp4)
+
+This is a lightweight and user-friendly viewer for visualizing **RaySplatting** with additional user-loaded objects that support ray tracing. The viewer allows seamless integration of **OBJ** and **PLY (ASCII format)** files into the scene.  
+
+The current material system is optimized for models designed to be **reflective** or **glass-like**, making it ideal for rendering high-quality visuals with realistic light interactions.  
+
+## System Requirements  
+
+To use this viewer, ensure your system meets the following requirements:  
+
+- **Operating System**: Windows  
+- **GPU**: NVIDIA RTX 20xx series or higher (**RTX 30xx+ recommended**)  
+- **CUDA Version**: 12.4 or later  
+- **Required DLLs**: Place the following files in the directory:  
+  ```plaintext
+  C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin
+  ```
+  - `cudart64_12.dll`  
+  - `cufft64_11.dll`  
+
+## Installation & Usage  
+
+1. Download the provided **ZIP file**.  [Download ZIP](https://drive.google.com/file/d/1XPivZb6-dVtuwQ3T9UrxOF2gTTnerGhp/view?usp=sharing)
+2. Extract the contents.  
+3. Run the **exe file**—no additional setup required!  
+4. Modify mesh properties in **mesh_config.txt**.  
+5. Change the base scene by editing the **PLY file path** in `config.txt`.  
+
+## Controls  
+
+- Exactly the same as in the interactive Windows viewer / optimizer application.
+
+## Future Features  
+
+We are actively developing new features, including:  
+- **Enhanced mesh transformations** (scaling, rotation, position editing beyond `mesh_config.txt`)  
+- **Screenshot capture** for rendered scenes  
+- **View presets** to allow seamless switching between different perspectives  
+- **And much more!**  
+
+Stay tuned for updates and improvements!
   
   where R, G and B are the integer non-negative background color coordinates in the range 0-255.
 - Run the "RaySplats" project from the Visual Studio IDE;
