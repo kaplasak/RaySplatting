@@ -70,8 +70,7 @@ To use this viewer, ensure your system meets the following requirements:
 
 ## Controls  
 
-- **Double Left Click**: Enter movement mode.  
-- **Movement**: Use **WASD** and mouse to navigate the scene.  
+- Exactly the same as in the interactive Windows viewer / optimizer application.
 
 ## Future Features  
 
