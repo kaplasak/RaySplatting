@@ -151,5 +151,14 @@ On our test system, we used the following paths as the string literal passed to 
 - In lines: 2 and 3 of the configuration file specify the location of the dataset main directory and the output 3DGS *.ply file obtained after short model pretraining (Important! With --sh_degree 0 as RaySplats uses the RGB model);
 - Run the "RaySplattingWindows" project from the Visual Studio IDE;
 
+## Controls in the interactive Windows viewer / optimizer application
+
+- **Double Left Click**: Toggle between the **static camera** and **free roam** mode.
+- **Mouse Movement**: Rotate camera in the **free roam** mode.
+- **W / S**: Move forward / backward.
+- **A / D**: Step left / right.
+- **Spacebar / C**: Move up / down.
+- **[ / ]**: Switch the camera to the previous / next rendering pose.
+
 
 
