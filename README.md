@@ -67,10 +67,7 @@ We are actively developing new features, including:
 
 Stay tuned for updates and improvements!
 
-# Learning 
-
-
-
+# Learning
 
 1. Prerequisites:
 -----------------
