@@ -1,47 +1,48 @@
-training                         <Model learning phase (0)>
-models/kitchen                   <Blender data directory path (1)>
-models/kitchen/kitchen_iter_100.ply <Pretrained GS model path (2)>
-colmap                           <Data format (-1)>
+training                      <Model learning phase (0)>
+models/lego (white)           <Blender data directory path (1)>
+models/lego (white)/iter_100_SH_3.ply <Pretrained GS model path (2)>
+blender                       <Data format (-1)>
 0              <Start epoch (3)>
 128000         <End epoch>
-0.0            <background color R component>
-0.0            <background color G component>
-0.0            <background color B component>
+4              <Spherical harmonics degree>
+0.998046875            <background color R component>
+0.998046875            <background color G component>
+0.998046875            <background color B component>
 0.005          <Learning rate for Gaussian RGB components>
 -0.000086643   <Exponential decay coefficient for learning rate for Gaussian RGB components>
 0.001          <Final value of learning rate for Gaussian RGB components>
-0.125          <Learning rate for Gaussian alpha component>
+0.05          <Learning rate for Gaussian alpha component>
 -0.000086643   <Exponential decay coefficient for learning rate for Gaussian alpha component>
-0.01           <Final value of learning rate for Gaussian alpha component>
-0.000003         <Learning rate for Gaussian means (4)>
+0.05           <Final value of learning rate for Gaussian alpha component>
+0.0003         <Learning rate for Gaussian means (4)>
 -0.000086643   <Exponential decay coefficient for learning rate for Gaussian means>
-0.0000000031    <Final value of learning rate for Gaussian means (4)>
-0.0001          <Learning rate for Gaussian scales (4)>
+0.00000306    <Final value of learning rate for Gaussian means (4)>
+0.00125          <Learning rate for Gaussian scales (4)>
 0              <Exponential decay coefficient for learning rate for Gaussian scales>
-0.0001          <Final value of learning rate for Gaussian scales (4)>
+0.00125          <Final value of learning rate for Gaussian scales (4)>
 0.001          <Learning rate for Gaussian quaternions>
 0              <Exponential decay coefficient for learning rate for Gaussian quaternions>
 0.001          <Final value of learning rate for Gaussian quaternions>
 100            <Densification frequency>
-100            <Densification start epoch>
+400            <Densification start epoch>
 16000          <Densification end epoch>
--3.1987        <alpha threshold for Gauss removal> -2.1972 -1.3863
-0.0000003        <Minimum s coefficients clipping threshold (4)>
+-1.0986        <alpha threshold for Gauss removal> -3.1987
+0.0001        <Minimum s coefficients clipping threshold (4)> !!! !!! !!!
 0.05         <Maximum s coefficients clipping threshold (4)>
-0.0000003         <Minimum s norm threshold for Gauss removal (4)>
+0.0005         <Minimum s norm threshold for Gauss removal (4)>
 0.05         <Maximum s norm threshold for Gauss removal (4)>
-0.0000016      <mu gradient norm threshold for densification (4)>
-0.0000003          <s norm threshold for Gaussian split streategy (4)>
-1.6            <Split ratio for Gaussian split strategy>
+0.0001      <mu gradient norm threshold for densification (4)>
+0.005          <s norm threshold for Gaussian split streategy (4)>
+2            <Split ratio for Gaussian split strategy>
 0.25           <Lambda parameter for the cost function>
 0.0001   <Ray termination T threshold>
 0.01   <Last significant Gauss alpha gradient precision>
-4            <Chi-square squared radius for the Gaussian ellipsoid of confidence>
-128            <Maximum number of Gaussians per ray>
+11.3449            <Chi-square squared radius for the Gaussian ellipsoid of confidence> !!!
+512            <Maximum number of Gaussians per ray>
 1000           <Model parameters saving frequency>
-1000           <Model evaluation frequency>
+1000          <Model evaluation frequency>
 0              <Model evaluation epoch (5)>
-2649111       <Maximum number of Gaussians per model threshold (6)>
+342761        <Maximum number of Gaussians per model threshold (6)>
 
 (-1) Can be either "blender" or "colmap".
 (0) Can be either "validation" or "training".

@@ -1,5 +1,3 @@
-// GENERAL OUTPUT: $(SolutionDir)$(Platform)\$(Configuration)\
-
 // !!! !!! !!!
 #define MAX_RAY_LENGTH 1024 // 64
 //#define USE_DOUBLE_PRECISION
@@ -20,11 +18,7 @@
 #include <CommCtrl.h>
 
 #include "Renderer.h"
-#include "RaySplattingWindows.h"
-
-// !!! !!! !!!
-#include "C3DScene.h"
-// !!! !!! !!!
+#include "RaySplats.h"
 
 #define MAX_LOADSTRING 100
 
@@ -38,8 +32,13 @@ WCHAR szTitle[MAX_LOADSTRING];
 WCHAR szWindowClass[MAX_LOADSTRING];
 
 ATOM                MyRegisterClass(HINSTANCE hInstance);
+
+template<int SH_degree>
 BOOL                InitInstance(HINSTANCE, int);
+
+template<int SH_degree>
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
+
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
 LARGE_INTEGER lpFrequency;
@@ -93,12 +92,10 @@ float pitch = 0.0f;
 float double_tan_half_fov_x;
 float double_tan_half_fov_y;
 
-SRenderParams *params;
-SCUDARenderParams dev_params;
-SOptiXRenderParams params_OptiX;
-SOptiXRenderParamsMesh params_OptiXMesh;
+void *params; // !!! !!! !!!
+void *params_OptiX;
 
-//   -*-   -*-   -*-   -*-   -*-
+// *************************************************************************************************
 
 void Dump(const char* fName, void* ptr, int size) {
 	FILE *f;
@@ -108,7 +105,7 @@ void Dump(const char* fName, void* ptr, int size) {
 	fclose(f);
 }
 
-//   -*-   -*-   -*-   -*-   -*-
+// *************************************************************************************************
 
 void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &numberOfPoses, SCamera *&poses, int *&bitmap, char **&img_names) {
 	FILE *f;
@@ -141,6 +138,7 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 	fgets(buf, 256, f);
 	sscanf_s(buf, " \"camera_angle_x\": %f", &FOV);
 
+	int scanLineSize = 0;
 	while (fgets(buf, 256, f) != NULL) {
 		char *str = strstr(buf, "file_path");
 		if (str != NULL) {
@@ -160,7 +158,6 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 
 			fopen_s(&f_bitmap, filePath, "rb");
 
-			int scanLineSize;
 			if (poseNum == 0) {
 				fseek(f_bitmap, 18, SEEK_SET);
 				fread(&bitmapWidth, 4, 1, f_bitmap);
@@ -241,41 +238,6 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 
 //   -*-   -*-   -*-   -*-   -*-
 
-struct SPLYFileStruct {
-	float x;
-	float y;
-	float z;
-	float nx;
-	float ny;
-	float nz;
-	float f_dc_0;
-	float f_dc_1;
-	float f_dc_2;
-	float opacity;
-	float scale_0;
-	float scale_1;
-	float scale_2;
-	float rot_0;
-	float rot_1;
-	float rot_2;
-	float rot_3;
-};
-
-// !!! !!! !!!
-#pragma pack(1)
-struct SPLYFileStruct2 {
-	float x;
-	float y;
-	float z;
-	float nx;
-	float ny;
-	float nz;
-	unsigned char red;
-	unsigned char green;
-	unsigned char blue;
-};
-// !!! !!! !!!
-
 int NUMBER_OF_POSES;
 int NUMBER_OF_POSES_TEST;
 
@@ -298,14 +260,14 @@ SLBVHTreeNode root;
 
 int numberOfGaussians;
 
-SGaussianComponent *GC;
+void *GC; // !!! !!! !!!
 SLBVHTreeNode *tree;
 int *d;
 int D, H;
 
 int *poses_indices;
 
-//   -*-   -*-   -*-   -*-   -*-
+// *************************************************************************************************
 
 void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	FILE *f;
@@ -359,6 +321,10 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	// (4) End epoch
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%d", &config.end_epoch, 256);
+
+	// (??) Spherical harmonics degree
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.SH_degree, 256);
 
 	// (??) Background color R component
 	fgets(buf, 256, f);
@@ -539,8 +505,9 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 // !!! !!! !!!
 SOptiXRenderConfig config;
 // !!! !!! !!!
+float ray_termination_T_threshold_training;
 
-//   -*-   -*-   -*-   -*-   -*-
+// *************************************************************************************************
 
 void LoadSceneAndCameraCOLMAP(
 	const char *dataPath,
@@ -595,6 +562,7 @@ void LoadSceneAndCameraCOLMAP(
 
 	void *bitmap_tmp = NULL;
 
+	int scanLineSize = 0;
 	tmp1 = buf;
 	for (int poseNum = 0; poseNum < numberOfPoses; ++poseNum) {
 		tmp2 = strstr(tmp1, "\"img_name\"");		
@@ -614,7 +582,6 @@ void LoadSceneAndCameraCOLMAP(
 
 		fopen_s(&f_bitmap, filePath, "rb");
 
-		int scanLineSize;
 		if (poseNum == 0) {
 			fseek(f_bitmap, 18, SEEK_SET);
 			fread(&bitmapWidth, 4, 1, f_bitmap);
@@ -721,10 +688,130 @@ void LoadSceneAndCameraCOLMAP(
 	}
 }
 
-//   -*-   -*-   -*-   -*-   -*-
+// *************************************************************************************************
+
+template<int SH_degree>
+void LoadPLYFile(const char* fName, SGaussianComponent<SH_degree> **GC_ptr) {
+	FILE *f;
+
+	fopen_s(&f, config.pretrained_model_path, "rb");
+
+	char buffer[256];
+	int numberOfProperties = 0;
+	do {
+		fgets(buffer, 256, f);
+
+		char *str = strstr(buffer, "element vertex");
+		if (str != NULL)
+			sscanf_s(str, "element vertex %d", &numberOfGaussians);
+
+		str = strstr(buffer, "property");
+		if (str != NULL) ++numberOfProperties;
+
+	} while (strstr(buffer, "end_header") == NULL);
+
+	int SH_degree_source = ((int)sqrt((numberOfProperties - 14) / 3)) - 1;
+
+	// *** *** ***
+
+	float *pfs = (float *)malloc(sizeof(float) * numberOfProperties);
+
+	*GC_ptr = (SGaussianComponent<SH_degree> *)malloc(sizeof(SGaussianComponent<SH_degree>) * numberOfGaussians);
+	SGaussianComponent<SH_degree> *GC = *GC_ptr;
+	for (int i = 0; i < numberOfGaussians; ++i) {
+		fread(pfs, sizeof(float) * numberOfProperties, 1, f);
+
+		GC[i].mX = pfs[0];
+		GC[i].mY = pfs[1];
+		GC[i].mZ = pfs[2];
+
+		GC[i].sX = pfs[numberOfProperties - 7];
+		GC[i].sY = pfs[numberOfProperties - 6];
+		GC[i].sZ = pfs[numberOfProperties - 5];
+
+		// !!! !!! !!!
+		//GC[i].sX = expf(-GC[i].sX);
+		//GC[i].sY = expf(-GC[i].sY);
+		//GC[i].sZ = expf(-GC[i].sZ);
+		// !!! !!! !!!
+
+		// *** *** *** *** ***
+
+		double qr = pfs[numberOfProperties - 4];
+		double qi = pfs[numberOfProperties - 3];
+		double qj = pfs[numberOfProperties - 2];
+		double qk = pfs[numberOfProperties - 1];
+		double invNorm = 1.0 / sqrt((qr * qr) + (qi * qi) + (qj * qj) + (qk * qk));
+		qr = qr * invNorm;
+		qi = qi * invNorm;
+		qj = qj * invNorm;
+		qk = qk * invNorm;
+
+		GC[i].qr = qr;
+		GC[i].qi = qi;
+		GC[i].qj = qj;
+		GC[i].qk = qk;
+
+		// *** *** *** *** ***
+
+		GC[i].R = pfs[6];
+		GC[i].G = pfs[7];
+		GC[i].B = pfs[8];
+
+		if constexpr (SH_degree > 0) {
+			/*int ind = 0;
+			for (int j = 1; j <= SH_degree; ++j) {
+				for (int k = 0; k < ((2 * j) + 1) * 3; ++k) {
+					if (j <= SH_degree_source) GC[i].RGB_SH_higher_order[ind] = pfs[9 + ind];
+					else
+						GC[i].RGB_SH_higher_order[ind] = 0.0f; // !!! !!! !!!
+
+					++ind;
+				}
+			}*/
+			int ind_src = 0;
+			for (int j = 0; j < 3; ++j) {
+				if (SH_degree <= SH_degree_source) {
+					for (int k = 1; k <= SH_degree_source; ++k) {
+						for (int l = 0; l < (2 * k) + 1; ++l) {
+							if (k <= SH_degree) {
+								int ind_dest = ((((k * k) - 1) + l) * 3) + j;
+								GC[i].RGB_SH_higher_order[ind_dest] = pfs[9 + ind_src];
+							}
+													
+							++ind_src;
+						}
+					}
+				} else {
+					for (int k = 1; k <= SH_degree; ++k) {
+						for (int l = 0; l < (2 * k) + 1; ++l) {
+							int ind_dest = ((((k * k) - 1) + l) * 3) + j;
+
+							if (k <= SH_degree_source) {
+								GC[i].RGB_SH_higher_order[ind_dest] = pfs[9 + ind_src];
+								++ind_src;
+							} else
+								GC[i].RGB_SH_higher_order[ind_dest] = 0.0f; // !!! !!! !!!
+						}
+					}
+				}
+			}
+		}
+		
+		GC[i].alpha = pfs[numberOfProperties - 8];
+		// !!! !!! !!!
+		//GC[i].alpha = 1.0f / (1.0f + expf(-GC[i].alpha));
+		// !!! !!! !!!
+	}
+
+	fclose(f);
+}
+
+// *************************************************************************************************
 
 void PrepareScene() {
 	LoadConfigFile("config.txt", config); // !!! !!! !!!
+	ray_termination_T_threshold_training = config.ray_termination_T_threshold;
 
 	if (strcmp(config.data_format, "colmap") == 0)
 		LoadSceneAndCameraCOLMAP(
@@ -784,87 +871,11 @@ void PrepareScene() {
 	if (config.start_epoch == 0) {
 		FILE *f;
 
-		fopen_s(&f, config.pretrained_model_path, "rb");
-
-		char buffer[256];
-		do {
-			fgets(buffer, 256, f);
-			char *str = strstr(buffer, "element vertex");
-			if (str != NULL)
-				sscanf_s(str, "element vertex %d", &numberOfGaussians);
-		} while (strstr(buffer, "end_header") == NULL);
-
-		GC = (SGaussianComponent *)malloc(sizeof(SGaussianComponent) * numberOfGaussians);
-		for (int i = 0; i < numberOfGaussians; ++i) {
-			SPLYFileStruct pfs;
-			fread(&pfs, sizeof(SPLYFileStruct), 1, f);
-		
-			GC[i].mX = pfs.x;
-			GC[i].mY = pfs.y;
-			GC[i].mZ = pfs.z;
-
-			double sX = exp(pfs.scale_0);
-			double sY = exp(pfs.scale_1);
-			double sZ = exp(pfs.scale_2);
-
-			// OLD INVERSE SIGMOID ACTIVATION FUNCTION FOR SCALE PARAMETERS
-			/*if (sX > 0.99f) sX = 0.99f;
-			if (sY > 0.99f) sY = 0.99f;
-			if (sZ > 0.99f) sZ = 0.99f;
-
-			GC[i].sX = -log((1.0 / sX) - 1.0);
-			GC[i].sY = -log((1.0 / sY) - 1.0);
-			GC[i].sZ = -log((1.0 / sZ) - 1.0);*/
-
-			// NEW EXPONENTIAL ACTIVATION FUNCTION FOR SCALE PARAMETERS
-			GC[i].sX = pfs.scale_0; // !!! !!! !!!
-			GC[i].sY = pfs.scale_1; // !!! !!! !!!
-			GC[i].sZ = pfs.scale_2; // !!! !!! !!!
-
-			// *** *** *** *** ***
-
-			double qr = pfs.rot_0;
-			double qi = pfs.rot_1;
-			double qj = pfs.rot_2;
-			double qk = pfs.rot_3;
-			double invNorm = 1.0 / sqrt((qr * qr) + (qi * qi) + (qj * qj) + (qk * qk));
-			qr = qr * invNorm;
-			qi = qi * invNorm;
-			qj = qj * invNorm;
-			qk = qk * invNorm;
-
-			GC[i].qr = qr;
-			GC[i].qi = qi;
-			GC[i].qj = qj;
-			GC[i].qk = qk;
-
-			GC[i].A11 = ((qr * qr) + (qi * qi) - (qj * qj) - (qk * qk)) / sX;
-			GC[i].A12 = ((2.0f * qi * qj) - (2.0f * qr * qk)) / sY;
-			GC[i].A13 = ((2.0f * qi * qk) + (2.0f * qr * qj)) / sZ;
-	
-			GC[i].A21 = ((2.0f * qi * qj) + (2.0f * qr * qk)) / sX;
-			GC[i].A22 = ((qr * qr) - (qi * qi) + (qj * qj) - (qk * qk)) / sY;
-			GC[i].A23 = ((2.0f * qj * qk) - (2.0f * qr * qi)) / sZ;
-
-			GC[i].A31 = ((2.0f * qi * qk) - (2.0f *qr * qj)) / sX;
-			GC[i].A32 = ((2.0f * qj * qk) + (2.0f *qr * qi)) / sY;
-			GC[i].A33 = ((qr * qr) - (qi * qi) - (qj * qj) + (qk * qk)) / sZ;
-
-			// *** *** *** *** ***
-
-			GC[i].R = (0.28209479177387814 * pfs.f_dc_0) + 0.5f;
-			GC[i].G = (0.28209479177387814 * pfs.f_dc_1) + 0.5f;
-			GC[i].B = (0.28209479177387814 * pfs.f_dc_2) + 0.5f;
-			GC[i].R = (GC[i].R < 0.0f) ? 0.0f : GC[i].R;
-			GC[i].R = (GC[i].R > 1.0f) ? 1.0f : GC[i].R;
-			GC[i].G = (GC[i].G < 0.0f) ? 0.0f : GC[i].G;
-			GC[i].G = (GC[i].G > 1.0f) ? 1.0f : GC[i].G;
-			GC[i].B = (GC[i].B < 0.0f) ? 0.0f : GC[i].B;
-			GC[i].B = (GC[i].B > 1.0f) ? 1.0f : GC[i].B;
-
-			GC[i].alpha = pfs.opacity;
-		}
-		fclose(f);
+		if      (config.SH_degree == 0) LoadPLYFile<0>(config.pretrained_model_path, (SGaussianComponent<0> **)&GC);
+		else if (config.SH_degree == 1) LoadPLYFile<1>(config.pretrained_model_path, (SGaussianComponent<1> **)&GC);
+		else if (config.SH_degree == 2) LoadPLYFile<2>(config.pretrained_model_path, (SGaussianComponent<2> **)&GC);
+		else if (config.SH_degree == 3) LoadPLYFile<3>(config.pretrained_model_path, (SGaussianComponent<3> **)&GC);
+		else if (config.SH_degree == 4) LoadPLYFile<4>(config.pretrained_model_path, (SGaussianComponent<4> **)&GC);
 	}
 
 	// *** *** *** *** ***
@@ -881,7 +892,7 @@ void PrepareScene() {
 	cameraChanged = true;
 }
 
-//   -*-   -*-   -*-   -*-   -*-
+// *************************************************************************************************
 
 int APIENTRY wWinMain(
 	_In_ HINSTANCE hInstance,
@@ -902,14 +913,22 @@ int APIENTRY wWinMain(
 	// *** *** *** *** ***
 
     LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-    LoadStringW(hInstance, IDC_RAYSPLATTINGWINDOWS, szWindowClass, MAX_LOADSTRING);
+    LoadStringW(hInstance, IDC_RAYSPLATS, szWindowClass, MAX_LOADSTRING);
     MyRegisterClass(hInstance);
 
-    if (!InitInstance (hInstance, nCmdShow)) {
+	BOOL result;
+
+	if      (config.SH_degree == 0) result = InitInstance<0>(hInstance, nCmdShow);
+	else if (config.SH_degree == 1) result = InitInstance<1>(hInstance, nCmdShow);
+	else if (config.SH_degree == 2) result = InitInstance<2>(hInstance, nCmdShow);
+	else if (config.SH_degree == 3) result = InitInstance<3>(hInstance, nCmdShow);
+	else if (config.SH_degree == 4) result = InitInstance<4>(hInstance, nCmdShow);
+
+    if (!result) {
         return FALSE;
     }
 
-    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_RAYSPLATTINGWINDOWS));
+    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_RAYSPLATS));
     MSG msg;
 
     while (GetMessage(&msg, nullptr, 0, 0)) {
@@ -922,20 +941,28 @@ int APIENTRY wWinMain(
     return (int) msg.wParam;
 }
 
+// *************************************************************************************************
+
 ATOM MyRegisterClass(HINSTANCE hInstance) {
     WNDCLASSEXW wcex;
 
     wcex.cbSize = sizeof(WNDCLASSEX);
 
     wcex.style          = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
-    wcex.lpfnWndProc    = WndProc;
+
+	if      (config.SH_degree == 0) wcex.lpfnWndProc = WndProc<0>;
+	else if (config.SH_degree == 1) wcex.lpfnWndProc = WndProc<1>;
+	else if (config.SH_degree == 2) wcex.lpfnWndProc = WndProc<2>;
+	else if (config.SH_degree == 3) wcex.lpfnWndProc = WndProc<3>;
+	else if (config.SH_degree == 4) wcex.lpfnWndProc = WndProc<4>;
+    
     wcex.cbClsExtra     = 0;
     wcex.cbWndExtra     = 0;
     wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_RAYSPLATTINGWINDOWS));
+    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_RAYSPLATS));
     wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
     wcex.hbrBackground  = (HBRUSH)(COLOR_MENU+1);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_RAYSPLATTINGWINDOWS);
+    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_RAYSPLATS);
     wcex.lpszClassName  = szWindowClass;
     wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
@@ -944,24 +971,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
 
 // *************************************************************************************************
 
-float RandomFloat(unsigned n) {
-	const unsigned a = 1664525;
-	const unsigned c = 1013904223;
-
-	unsigned tmp1 = 1;
-	unsigned tmp2 = a;
-	unsigned tmp3 = 0;
-	while (n != 0) {
-		if ((n & 1) != 0) tmp3 = (tmp2 * tmp3) + tmp1;
-		tmp1 = (tmp2 * tmp1) + tmp1;
-		tmp2 = tmp2 * tmp2;
-		n >>= 1;
-	}
-	float result;
-	*((unsigned *)&result) = 1065353216 | ((tmp3 * c) & 8388607);
-	return result - 0.99999994f;
-}
-
+template<int SH_degree>
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 	hInst = hInstance;
    
@@ -1012,7 +1022,17 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 	// !!! !!! !!!
 	NUMBER_OF_GAUSSIANS = numberOfGaussians;
 	// !!! !!! !!!
-	params = (SRenderParams *)malloc(sizeof(SRenderParams) * THREADS_NUM);
+
+	// !!! !!! !!!
+	params = malloc(sizeof(SRenderParams<SH_degree>) * THREADS_NUM);
+	SRenderParams<SH_degree> *params = (SRenderParams<SH_degree> *)::params;
+	// !!! !!! !!!
+
+	// !!! !!! !!!
+	params_OptiX = malloc(sizeof(SOptiXRenderParams<SH_degree>) * 1);
+	SOptiXRenderParams<SH_degree> *params_OptiX = (SOptiXRenderParams<SH_degree> *)::params_OptiX;
+	// !!! !!! !!!
+
 	for (int i = 0; i < THREADS_NUM; ++i) {
 		params[i].Ox = Ox; params[i].Oy = Oy; params[i].Oz = Oz;
 		params[i].Rx = Rx; params[i].Ry = Ry; params[i].Rz = Rz;
@@ -1025,7 +1045,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 		params[i].bitmap = bitmap;
 		params[i].w = bitmapWidth; params[i].h = bitmapHeight;
 		params[i].tree = tree;
-		params[i].GC = GC;
+		params[i].GC = (SGaussianComponent<SH_degree> *)GC;
 		params[i].numberOfGaussians = NUMBER_OF_GAUSSIANS;
 		params[i].d = d;
 		params[i].D = D;
@@ -1070,762 +1090,56 @@ bool result;
 		// LOAD FROM PRETRAINED MODEL
 		epochNum = 1;
 
-		result = InitializeOptiXRenderer(params[0], params_OptiX);
+		if      constexpr (SH_degree == 0) result = InitializeOptiXRendererSH0(params[0], *params_OptiX);
+		else if constexpr (SH_degree == 1) result = InitializeOptiXRendererSH1(params[0], *params_OptiX);
+		else if constexpr (SH_degree == 2) result = InitializeOptiXRendererSH2(params[0], *params_OptiX);
+		else if constexpr (SH_degree == 3) result = InitializeOptiXRendererSH3(params[0], *params_OptiX);
+		else if constexpr (SH_degree == 4) result = InitializeOptiXRendererSH4(params[0], *params_OptiX);
+		
 		swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-		float lB, rB, uB, dB, bB, fB, scene_extent;
-		GetSceneBoundsOptiX(lB, rB, uB, dB, bB, fB, scene_extent);
-		swprintf(consoleBuffer, 256, L"EXTENT INITIAL: %f %f %f\n", rB - lB, dB - uB, fB - bB);
+		float scene_extent;
+		GetSceneExtentOptiX(scene_extent);
+		swprintf(consoleBuffer, 256, L"INITIAL SCENE EXTENT: %f;\n", scene_extent);
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-		swprintf(consoleBuffer, 256, L"%d\n", params_OptiX.width);
+		swprintf(consoleBuffer, 256, L"%d\n", params_OptiX->width);
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-		result = InitializeOptiXOptimizer(params[0], params_OptiX);
+		if      constexpr (SH_degree == 0) result = InitializeOptiXOptimizerSH0(params[0], *params_OptiX);
+		else if constexpr (SH_degree == 1) result = InitializeOptiXOptimizerSH1(params[0], *params_OptiX);
+		else if constexpr (SH_degree == 2) result = InitializeOptiXOptimizerSH2(params[0], *params_OptiX);
+		else if constexpr (SH_degree == 3) result = InitializeOptiXOptimizerSH3(params[0], *params_OptiX);
+		else if constexpr (SH_degree == 4) result = InitializeOptiXOptimizerSH4(params[0], *params_OptiX);
+
 		swprintf(consoleBuffer, 256, L"Initializing OptiX optimizer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
 		epochNumStart = epochNum;		
 	} else {
-		#ifdef VISUALIZATION
-			// LOAD FROM SAVED PARAMS
-			
-			// lego
-			C3DScene *scene = new C3DScene();
-
-			scene->light.Ox = 0.0f;
-			scene->light.Oy = -20.0f;
-			scene->light.Oz	= 10.0f;
-			scene->light.R = 250000.0f; 
-			scene->light.G = 250000.0f;
-			scene->light.B = 250000.0f;
-
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 512.0f, 0.0f, 1.125f});
-
-			int fCntOld = scene->fCnt;
-			int vCntOld = scene->vCnt;
-			int nCntOld = scene->nCnt;
-			scene->LoadOBJFile("dragon_vrip.obj", 0);
-
-			// *** *** *** *** ***
-
-			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			CMat4Df m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(M_PI / 2.0f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(0.0f, -0.75f, 0.1f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *************************************************************************************
-
-			// garden
-			/*C3DScene *scene = new C3DScene();
-
-			scene->light.Ox = 200.0f;
-			scene->light.Oy = 0.0f;
-			scene->light.Oz	= -200.0f; 
-			scene->light.R = 100000.0f; 
-			scene->light.G = 100000.0f;
-			scene->light.B = 100000.0f;
-
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 16.0f, 0.75f, 1.125f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 16.0f, 0.75f, 1.125f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 16.0f, 0.75f, 1.125f});
-
-			// *** *** *** *** ***
-			
-			int fCntOld = scene->fCnt;
-			int vCntOld = scene->vCnt;
-			int nCntOld = scene->nCnt;
-			scene->LoadOBJFile("dragon_vrip.obj", 0);
-
-			// *** *** *** *** ***
-
-			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			CMat4Df m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * 0.125f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(-0.35f, 0.8f, 1.55f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-
-			fCntOld = scene->fCnt;
-			vCntOld = scene->vCnt;
-			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("bun_zipper.obj", 1);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * 0.375f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(-0.15f, 1.5f, 0.25f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-			
-			fCntOld = scene->fCnt;
-			vCntOld = scene->vCnt;
-			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("lucy.obj", 2);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.lB, sceneBounds.uB, sceneBounds.bB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(0.001f, 0.001f, 0.001f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.325f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(1.25f, 0.6f, 1.0f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.lB, sceneBounds.uB, sceneBounds.bB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);*/
-
-			// *************************************************************************************
-
-			// bicycle
-			/*C3DScene *scene = new C3DScene();
-
-			scene->light.Ox = 200.0f;
-			scene->light.Oy = 0.0f;
-			scene->light.Oz	= -200.0f; 
-			scene->light.R = 75000.0f; 
-			scene->light.G = 75000.0f;
-			scene->light.B = 75000.0f;
-
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 16.0f, 0.75f, 1.125f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 16.0f, 0.75f, 1.125f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 16.0f, 0.75f, 1.125f});
-
-			// *** *** *** *** ***
-
-			int fCntOld = scene->fCnt;
-			int vCntOld = scene->vCnt;
-			int nCntOld = scene->nCnt;
-			scene->LoadOBJFile("dragon_vrip.obj", 0);
-
-			// *** *** *** *** ***
-
-			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			CMat4Df m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(2.5f, 2.5f, 2.5f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.05f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * 0.05f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * 0.25f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OZRotation(2.0f * M_PI * 0.45f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.025f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(1.0f, 1.075f, -0.5f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-
-			fCntOld = scene->fCnt;
-			vCntOld = scene->vCnt;
-			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("bun_zipper.obj", 1);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(2.5f, 2.5f, 2.5f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.05f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * 0.05f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * 0.25f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OZRotation(2.0f * M_PI * 0.45f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.025f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(0.25f, 0.7f, 1.2f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-
-			fCntOld = scene->fCnt;
-			vCntOld = scene->vCnt;
-			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("lucy.obj", 2);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(0.0005f, 0.0005f, 0.0005f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.3f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(0.6f, 0.7f, 0.25f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1); */
-
-			// *************************************************************************************
-
-			// room
-			/*C3DScene *scene = new C3DScene();
-
-			scene->light.Ox = 2.0f;
-			scene->light.Oy = -2.0f;
-			scene->light.Oz	= -2.0f; 
-			scene->light.R = 25.0f; 
-			scene->light.G = 25.0f;
-			scene->light.B = 25.0f;
-
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 16.0f, 0.75f, 1.125f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 16.0f, 0.0f, 4.0f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 16.0f, 0.0f, 128.0f});
-
-			// *** *** *** *** ***
-
-			int fCntOld = scene->fCnt;
-			int vCntOld = scene->vCnt;
-			int nCntOld = scene->nCnt;
-			scene->LoadOBJFile("dragon_vrip.obj", 0);
-
-			// *** *** *** *** ***
-
-			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			CMat4Df m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * 0.125f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(-0.4f, 2.4f, 1.85f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-
-			fCntOld = scene->fCnt;
-			vCntOld = scene->vCnt;
-			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("bun_zipper.obj", 1);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * 0.375f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(1.15f, 1.8f, 2.9f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-
-			fCntOld = scene->fCnt;
-			vCntOld = scene->vCnt;
-			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("lucy.obj", 2);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.lB, sceneBounds.uB, sceneBounds.bB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(0.001f, 0.001f, 0.001f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.325f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(0.85f, 2.25f, 1.2f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);*/
-
-			// *************************************************************************************
-
-			// kitchen
-			/*C3DScene *scene = new C3DScene();
-
-			scene->light.Ox = -2.0f;
-			scene->light.Oy = -4.0f;
-			scene->light.Oz	= -2.0f; 
-			scene->light.R = 25.0f; 
-			scene->light.G = 25.0f;
-			scene->light.B = 25.0f;
-
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 16.0f, 0.75f, 1.125f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 16.0f, 0.0f, 4.0f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 16.0f, 0.0f, 128.0f});
-
-			// *** *** *** *** ***
-
-			int fCntOld = scene->fCnt;
-			int vCntOld = scene->vCnt;
-			int nCntOld = scene->nCnt;
-			scene->LoadOBJFile("dragon_vrip.obj", 0);
-
-			// *** *** *** *** ***
-
-			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			CMat4Df m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * 0.125f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(0.75f, 1.5, 1.4f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-
-			fCntOld = scene->fCnt;
-			vCntOld = scene->vCnt;
-			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("bun_zipper.obj", 1);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(5.0f, 5.0f, 5.0f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * 0.375f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.575f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(-1.3f, 2.15f, 0.55f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-
-			fCntOld = scene->fCnt;
-			vCntOld = scene->vCnt;
-			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("lucy.obj", 2);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.lB, sceneBounds.uB, sceneBounds.bB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB, sceneBounds.dB, sceneBounds.fB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-			swprintf(consoleBuffer, 256, L"%f %f %f\n", sceneBounds.rB - sceneBounds.lB, sceneBounds.dB - sceneBounds.uB, sceneBounds.fB - sceneBounds.bB);
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(0.001f, 0.001f, 0.001f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.325f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(-0.8f, 0.15f, 2.5f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);*/
-
-			// *************************************************************************************
-
-			// drjohnson
-			/*C3DScene *scene = new C3DScene();
-
-			scene->light.Ox = -2.0f;
-			scene->light.Oy = 0.0;
-			scene->light.Oz	= -2.0f; 
-			scene->light.R = 1.0f; 
-			scene->light.G = 1.0f;
-			scene->light.B = 1.0f;
-
-			scene->AddVertex(CVec3Df(-0.5f, -0.5f, 0.0f));
-			scene->AddVertex(CVec3Df(0.5f, -0.5f, 0.0f));
-			scene->AddVertex(CVec3Df(0.5f, 0.5f, 0.0f));
-			scene->AddVertex(CVec3Df(-0.5f, 0.5f, 0.0f));
-			
-			scene->AddNormal(CVec3Df(0.0f, 0.0f, -1.0f));
-						
-			CFace f;
-
-			f.P1 = 0; f.P2 = 1; f.P3 = 2;
-			f.N1 = 0; f.N2 = 0; f.N3 = 0;
-			f.mat = 3;			
-			scene->AddFace(f);
-			
-			f.P1 = 0; f.P2 = 2; f.P3 = 3;
-			f.N1 = 0; f.N2 = 0; f.N3 = 0;
-			f.mat = 3;
-			scene->AddFace(f);
-
-			CMat4Df m;
-
-			m = CMat4Df::Scaling(CVec3Df(1.7f, 1.1f, 1.0f));
-			scene->Transform(m, 0, 3, 0, 0);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.25f);
-			scene->Transform(m, 0, 3, 0, 0);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * -0.09f);
-			scene->Transform(m, 0, 3, 0, 0);
-
-			m = CMat4Df::Translation(CVec3Df(-3.2f, 2.2f, -2.7f));
-			scene->Transform(m, 0, 3, 0, 0);
-
-			scene->AddVertex(CVec3Df(-0.5f, -0.5f, 0.0f));
-			scene->AddVertex(CVec3Df(0.5f, -0.5f, 0.0f));
-			scene->AddVertex(CVec3Df(0.5f, 0.5f, 0.0f));
-			scene->AddVertex(CVec3Df(-0.5f, 0.5f, 0.0f));
-
-			scene->AddNormal(CVec3Df(0.0f, 0.0f, 1.0f));
-
-			f.P1 = 4; f.P2 = 5; f.P3 = 6;
-			f.N1 = 1; f.N2 = 1; f.N3 = 1;
-			f.mat = 3;			
-			scene->AddFace(f);
-
-			f.P1 = 4; f.P2 = 6; f.P3 = 7;
-			f.N1 = 1; f.N2 = 1; f.N3 = 1;
-			f.mat = 3;
-			scene->AddFace(f);
-
-			m = CMat4Df::Scaling(CVec3Df(1.7f, 1.1f, 1.0f));
-			scene->Transform(m, 4, 7, 1, 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * 0.25f);
-			scene->Transform(m, 4, 7, 1, 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * -0.09f);
-			scene->Transform(m, 4, 7, 1, 1);
-
-			m = CMat4Df::Translation(CVec3Df(-3.2f, -2.025f, -2.7f));
-			scene->Transform(m, 4, 7, 1, 1);
-
-			// *** *** *** *** ***
-
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 16.0f, 0.75f, 1.125f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 16.0f, 0.0f, 4.0f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 16.0f, 0.0f, 128.0f});
-			scene->AddMaterial(SMaterial{0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 16.0f, 0.0f, 128.0f});
-
-			// *** *** *** *** ***
-
-			int fCntOld = scene->fCnt;
-			int vCntOld = scene->vCnt;
-			int nCntOld = scene->nCnt;
-			scene->LoadOBJFile("dragon_vrip.obj", 0);
-
-			// *** *** *** *** ***
-
-			SAABB sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(2.5f, 2.5f, 2.5f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * -0.05f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OZRotation(2.0f * M_PI * -0.25f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * -0.02f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(-3.3f, 0.0, -2.7f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-
-			fCntOld = scene->fCnt;
-			vCntOld = scene->vCnt;
-			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("bun_zipper.obj", 1);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(2.5f, 2.5f, 2.5f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * -0.05f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OZRotation(2.0f * M_PI * -0.25f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * -0.02f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(-3.1f, 0.0, -2.4f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			// *** *** *** *** ***
-
-			fCntOld = scene->fCnt;
-			vCntOld = scene->vCnt;
-			nCntOld = scene->nCnt;
-			scene->LoadOBJFile("lucy.obj", 2);
-
-			// *** *** *** *** ***
-
-			sceneBounds = scene->GetAABB(fCntOld, scene->fCnt - 1);
-
-			m = CMat4Df::Translation(
-				CVec3Df(
-					-0.5f * (sceneBounds.rB + sceneBounds.lB),
-					-0.5f * (sceneBounds.dB + sceneBounds.uB),
-					-0.5f * (sceneBounds.fB + sceneBounds.bB)
-				)
-			);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Scaling(CVec3Df(0.0005f, 0.0005f, 0.0005f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OXRotation(2.0f * M_PI * -0.05f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OZRotation(2.0f * M_PI * -0.25f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * -0.02f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::OYRotation(2.0f * M_PI * -0.25f);
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);
-
-			m = CMat4Df::Translation(CVec3Df(-3.35f, 0.0, -3.2f));
-			scene->Transform(m, vCntOld, scene->vCnt - 1, nCntOld, scene->nCnt - 1);*/
-
-			// *************************************************************************************
-
-			epochNum = config.start_epoch;
-
-			result = InitializeOptiXRendererMesh(params[0], params_OptiX, scene, params_OptiXMesh, true, epochNum);
-			swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-		#else
-			epochNum = config.start_epoch;
-
-			result = InitializeOptiXRenderer(params[0], params_OptiX, true, epochNum);
-			swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-			result = InitializeOptiXOptimizer(params[0], params_OptiX, true, epochNum);
-			swprintf(consoleBuffer, 256, L"Initializing OptiX optimizer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-			WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-			++epochNum;
-			epochNumStart = epochNum;
-		#endif
+		epochNum = config.start_epoch;
+
+		if      constexpr (SH_degree == 0) result = InitializeOptiXRendererSH0(params[0], *params_OptiX, true, epochNum);
+		else if constexpr (SH_degree == 1) result = InitializeOptiXRendererSH1(params[0], *params_OptiX, true, epochNum);
+		else if constexpr (SH_degree == 2) result = InitializeOptiXRendererSH2(params[0], *params_OptiX, true, epochNum);
+		else if constexpr (SH_degree == 3) result = InitializeOptiXRendererSH3(params[0], *params_OptiX, true, epochNum);
+		else if constexpr (SH_degree == 4) result = InitializeOptiXRendererSH4(params[0], *params_OptiX, true, epochNum);
+
+		swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+		if      constexpr (SH_degree == 0) result = InitializeOptiXOptimizerSH0(params[0], *params_OptiX, true, epochNum);
+		else if constexpr (SH_degree == 1) result = InitializeOptiXOptimizerSH1(params[0], *params_OptiX, true, epochNum);
+		else if constexpr (SH_degree == 2) result = InitializeOptiXOptimizerSH2(params[0], *params_OptiX, true, epochNum);
+		else if constexpr (SH_degree == 3) result = InitializeOptiXOptimizerSH3(params[0], *params_OptiX, true, epochNum);
+		else if constexpr (SH_degree == 4) result = InitializeOptiXOptimizerSH4(params[0], *params_OptiX, true, epochNum);
+
+		swprintf(consoleBuffer, 256, L"Initializing OptiX optimizer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+		++epochNum;
+		epochNumStart = epochNum;
 	}
 
 	// *****************************************************************************************
@@ -1928,9 +1242,16 @@ bool result;
 	return TRUE;	
 }
 
-// *** *** *** *** ***
+// *************************************************************************************************
 
+template<int SH_degree>
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+	// !!! !!! !!!
+	SOptiXRenderParams<SH_degree> *params_OptiX = (SOptiXRenderParams<SH_degree> *)::params_OptiX;
+	// !!! !!! !!!
+
+	// *** *** *** *** ***
+
 	switch (message) {
 		case WM_COMMAND : {
 			int wmId = LOWORD(wParam);
@@ -2176,7 +1497,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 					switch (phase) {
 						case 2 : {
-
+							
 							// *** *** *** *** ***
 
 							#ifdef VISUALIZATION
@@ -2194,7 +1515,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								int poseNum_traininggg = poses_indices[0 + poseNum_training];
 								bool result;
 
-								result = ZeroGradientOptiX(params_OptiX);
+								if      constexpr (SH_degree == 0) result = ZeroGradientOptiXSH0(*params_OptiX);
+								else if constexpr (SH_degree == 1) result = ZeroGradientOptiXSH1(*params_OptiX);
+								else if constexpr (SH_degree == 2) result = ZeroGradientOptiXSH2(*params_OptiX);
+								else if constexpr (SH_degree == 3) result = ZeroGradientOptiXSH3(*params_OptiX);
+								else if constexpr (SH_degree == 4) result = ZeroGradientOptiXSH4(*params_OptiX);
 
 								// !!! !!! !!!
 								LARGE_INTEGER lpPerformanceCount2;
@@ -2210,17 +1535,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								// !!! !!! !!!
 
 								// OptiX
-								params_OptiX.O.x = poses[poseNum_traininggg].Ox; params_OptiX.O.y = poses[poseNum_traininggg].Oy; params_OptiX.O.z = poses[poseNum_traininggg].Oz;
-								params_OptiX.R.x = poses[poseNum_traininggg].Rx; params_OptiX.R.y = poses[poseNum_traininggg].Ry; params_OptiX.R.z = poses[poseNum_traininggg].Rz;
-								params_OptiX.D.x = poses[poseNum_traininggg].Dx; params_OptiX.D.y = poses[poseNum_traininggg].Dy; params_OptiX.D.z = poses[poseNum_traininggg].Dz;
-								params_OptiX.F.x = poses[poseNum_traininggg].Fx; params_OptiX.F.y = poses[poseNum_traininggg].Fy; params_OptiX.F.z = poses[poseNum_traininggg].Fz;
+								params_OptiX->O.x = poses[poseNum_traininggg].Ox; params_OptiX->O.y = poses[poseNum_traininggg].Oy; params_OptiX->O.z = poses[poseNum_traininggg].Oz;
+								params_OptiX->R.x = poses[poseNum_traininggg].Rx; params_OptiX->R.y = poses[poseNum_traininggg].Ry; params_OptiX->R.z = poses[poseNum_traininggg].Rz;
+								params_OptiX->D.x = poses[poseNum_traininggg].Dx; params_OptiX->D.y = poses[poseNum_traininggg].Dy; params_OptiX->D.z = poses[poseNum_traininggg].Dz;
+								params_OptiX->F.x = poses[poseNum_traininggg].Fx; params_OptiX->F.y = poses[poseNum_traininggg].Fy; params_OptiX->F.z = poses[poseNum_traininggg].Fz;
 		
-								params_OptiX.poseNum = poseNum_traininggg;
-								params_OptiX.epoch = epochNum;
-								params_OptiX.copyBitmapToHostMemory = false;
+								params_OptiX->poseNum = poseNum_traininggg;
+								params_OptiX->epoch = epochNum;
+								params_OptiX->copyBitmapToHostMemory = false;
 
-								result = RenderOptiX(params_OptiX);
+								swprintf(consoleBuffer, 256, L"!!! %d %d !!!\n", params_OptiX->epoch, params_OptiX->poseNum);
+								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
+								if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX, false);
+								else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX, false);
+								else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX, false);
+								else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX, false);
+								else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX, false);
+								
 								// !!! !!! !!!
 								QueryPerformanceCounter(&lpPerformanceCount2);
 								training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
@@ -2229,9 +1561,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 								swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-								float lB, rB, uB, dB, bB, fB, scene_extent;
-								GetSceneBoundsOptiX(lB, rB, uB, dB, bB, fB, scene_extent);
-								swprintf(consoleBuffer, 256, L"Scene extent: %f (%f, %f, %f)... .\n", scene_extent, rB - lB, dB - uB, fB - bB);
+								float scene_extent;
+								GetSceneExtentOptiX(scene_extent);
+								swprintf(consoleBuffer, 256, L"Scene extent: %f;\n", scene_extent);
 								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
 								if (epochNum > 1) {
@@ -2242,8 +1574,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 										epochNum,
 										poseNum_training + 1,
 										NUMBER_OF_POSES,
-										params_OptiX.loss_host / (3.0 * bitmapWidth * bitmapHeight /** NUMBER_OF_POSES*/),
-										-10.0f * (logf(params_OptiX.loss_host / (3.0f * bitmapWidth * bitmapHeight/* * NUMBER_OF_POSES*/)) / logf(10.0f))
+										params_OptiX->loss_host / (3.0 * bitmapWidth * bitmapHeight /** NUMBER_OF_POSES*/),
+										-10.0f * (logf(params_OptiX->loss_host / (3.0f * bitmapWidth * bitmapHeight/* * NUMBER_OF_POSES*/)) / logf(10.0f))
 									);
 									SendMessage(GetDlgItem(hWnd, LABEL1), WM_SETTEXT, 0, (LPARAM)text);
 								} else {
@@ -2255,14 +1587,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 								{
 									// OptiX
-									int state;
+									int state = 123456;
 
 									// !!! !!! !!!
 									LARGE_INTEGER lpPerformanceCount1;
 									QueryPerformanceCounter(&lpPerformanceCount1);
 									// !!! !!! !!!
 
-									result = UpdateGradientOptiX(params_OptiX, state);
+									if      constexpr (SH_degree == 0) result = UpdateGradientOptiXSH0(*params_OptiX, state);
+									else if constexpr (SH_degree == 1) result = UpdateGradientOptiXSH1(*params_OptiX, state);
+									else if constexpr (SH_degree == 2) result = UpdateGradientOptiXSH2(*params_OptiX, state);
+									else if constexpr (SH_degree == 3) result = UpdateGradientOptiXSH3(*params_OptiX, state);
+									else if constexpr (SH_degree == 4) result = UpdateGradientOptiXSH4(*params_OptiX, state);
 
 									// !!! !!! !!!
 									LARGE_INTEGER lpPerformanceCount2;
@@ -2276,10 +1612,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 									swprintf(consoleBuffer, 256, L"STATE: %d\n", state);
 									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-									swprintf(consoleBuffer, 256, L"EPOCH: %d, GAUSSIANS: %d, LOSS: %.20lf\n", epochNum, params_OptiX.numberOfGaussians, params_OptiX.loss_host / (3.0 * bitmapWidth * bitmapHeight * 1));
+									swprintf(consoleBuffer, 256, L"EPOCH: %d, GAUSSIANS: %d, LOSS: %.20lf\n", epochNum, params_OptiX->numberOfGaussians, params_OptiX->loss_host / (3.0 * bitmapWidth * bitmapHeight * 1));
 									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 									
 									// *** *** *** *** ***
+
+									config.ray_termination_T_threshold = 0.01f;
+									SetConfigurationOptiX(config);
 									
 									// TRAIN
 									// !!! !!! !!!
@@ -2287,43 +1626,80 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 										(epochNum % config.evaluation_frequency == config.evaluation_epoch) ||
 										(epochNum == config.end_epoch)
 									) {
+										// !!! !!! !!!
+										int *Gaussians_count = (int *)malloc(sizeof(int) * params_OptiX->numberOfGaussians);
+										memset(Gaussians_count, 0, sizeof(int) * params_OptiX->numberOfGaussians);
+										// !!! !!! !!!
+
 										double MSE = 0.0;
 										double PSNR = 0.0;
 										for (int pose = 0; pose < NUMBER_OF_POSES; ++pose) {
 											double poseMSE = 0.0;
 
-											params_OptiX.O.x = poses[pose].Ox; params_OptiX.O.y = poses[pose].Oy; params_OptiX.O.z = poses[pose].Oz;
-											params_OptiX.R.x = poses[pose].Rx; params_OptiX.R.y = poses[pose].Ry; params_OptiX.R.z = poses[pose].Rz;
-											params_OptiX.D.x = poses[pose].Dx; params_OptiX.D.y = poses[pose].Dy; params_OptiX.D.z = poses[pose].Dz;
-											params_OptiX.F.x = poses[pose].Fx; params_OptiX.F.y = poses[pose].Fy; params_OptiX.F.z = poses[pose].Fz;
-											params_OptiX.copyBitmapToHostMemory = true;
+											params_OptiX->O.x = poses[pose].Ox; params_OptiX->O.y = poses[pose].Oy; params_OptiX->O.z = poses[pose].Oz;
+											params_OptiX->R.x = poses[pose].Rx; params_OptiX->R.y = poses[pose].Ry; params_OptiX->R.z = poses[pose].Rz;
+											params_OptiX->D.x = poses[pose].Dx; params_OptiX->D.y = poses[pose].Dy; params_OptiX->D.z = poses[pose].Dz;
+											params_OptiX->F.x = poses[pose].Fx; params_OptiX->F.y = poses[pose].Fy; params_OptiX->F.z = poses[pose].Fz;
+											params_OptiX->copyBitmapToHostMemory = true;
 
-											result = RenderOptiX(params_OptiX);
+											// *** *** *** *** ***
+
+											// !!! !!! !!!
+											//int *Gaussians_indices = (int *)malloc(sizeof(int) * params_OptiX->width * params_OptiX->height * config.max_Gaussians_per_ray);
+											// !!! !!! !!!
+
+											// *** *** *** *** ***
+
+											if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX/*, Gaussians_indices*/);
+											else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX/*, Gaussians_indices*/);
+											else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX/*, Gaussians_indices*/);
+											else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX/*, Gaussians_indices*/);
+											else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX/*, Gaussians_indices*/);
+
+											// *** *** *** *** ***
+
+											// !!! !!! !!!
+											/*for (int i = 0; i < params_OptiX->height; ++i) {
+												for (int j = 0; j < params_OptiX->width; ++j) {
+													int k = 0;
+													int ind;
+													do {
+														ind = Gaussians_indices[(k * (params_OptiX->width * params_OptiX->height)) + (i * params_OptiX->width) + j];
+														if (ind != -1) ++Gaussians_count[ind];
+														++k;
+													} while ((ind != -1) && (k < config.max_Gaussians_per_ray));
+												}
+											}
+											free(Gaussians_indices);*/
+											// !!! !!! !!!
+
+											// *** *** *** *** ***
+
 											//swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 											//WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-											for (int i = 0; i < params_OptiX.height; ++i) {
-												for (int j = 0; j < params_OptiX.width; ++j) {
-													int color_out = params_OptiX.bitmap_host[(i * params_OptiX.width) + j];
+											for (int i = 0; i < params_OptiX->height; ++i) {
+												for (int j = 0; j < params_OptiX->width; ++j) {
+													int color_out = params_OptiX->bitmap_host[(i * params_OptiX->width) + j];
 													int R_out_i = color_out >> 16;
 													int G_out_i = (color_out >> 8) & 255;
 													int B_out_i = color_out & 255;
-													float R_out = R_out_i / 255.0f;
-													float G_out = G_out_i / 255.0f;
-													float B_out = B_out_i / 255.0f;
+													float R_out = R_out_i / 256.0f;
+													float G_out = G_out_i / 256.0f;
+													float B_out = B_out_i / 256.0f;
 
-													int color_ref = bitmap_ref[(pose * params_OptiX.width * params_OptiX.height) + ((i * params_OptiX.width) + j)];
+													int color_ref = bitmap_ref[(pose * params_OptiX->width * params_OptiX->height) + ((i * params_OptiX->width) + j)];
 													int R_ref_i = color_ref >> 16;
 													int G_ref_i = (color_ref >> 8) & 255;
 													int B_ref_i = color_ref & 255;
-													float R_ref = R_ref_i / 255.0f;
-													float G_ref = G_ref_i / 255.0f;
-													float B_ref = B_ref_i / 255.0f;
+													float R_ref = R_ref_i / 256.0f;
+													float G_ref = G_ref_i / 256.0f;
+													float B_ref = B_ref_i / 256.0f;
 
 													poseMSE += (((R_out - R_ref) * (R_out - R_ref)) + ((G_out - G_ref) * (G_out - G_ref)) + ((B_out - B_ref) * (B_out - B_ref)));
 												}
 											}
-											poseMSE /= 3.0 * params_OptiX.width * params_OptiX.height;
+											poseMSE /= 3.0 * params_OptiX->width * params_OptiX->height;
 											double posePSNR = -10.0 * (log(poseMSE) / log(10.0));
 
 											swprintf(consoleBuffer, 256, L"TRAIN POSE: %d, PSNR: %.30lf;\n", pose + 1, posePSNR);
@@ -2349,6 +1725,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 										fopen_s(&f, "PSNR_Train.txt", "at");
 										fprintf(f, "%d: %.30lf,\n", epochNum, PSNR);
 										fclose(f);
+
+										// !!! !!! !!!
+										/*int number_of_active_Gaussians = 0;
+										for (int i = 0; i < params_OptiX->numberOfGaussians; ++i) {
+											if (Gaussians_count[i] != 0) ++number_of_active_Gaussians;
+										}
+										fopen_s(&f, "Active_Gaussians_Train.txt", "at");
+										fprintf(f, "%d: %.3lf,\n", epochNum, ((float)number_of_active_Gaussians) / params_OptiX->numberOfGaussians);
+										fclose(f);
+										free(Gaussians_count);*/
+										// !!! !!! !!!
 									}
 									// !!! !!! !!!
 
@@ -2369,11 +1756,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 										for (int pose = 0; pose < NUMBER_OF_POSES_TEST; ++pose) {
 											double poseMSE = 0.0;
 
-											params_OptiX.O.x = poses_test[pose].Ox; params_OptiX.O.y = poses_test[pose].Oy; params_OptiX.O.z = poses_test[pose].Oz;
-											params_OptiX.R.x = poses_test[pose].Rx; params_OptiX.R.y = poses_test[pose].Ry; params_OptiX.R.z = poses_test[pose].Rz;
-											params_OptiX.D.x = poses_test[pose].Dx; params_OptiX.D.y = poses_test[pose].Dy; params_OptiX.D.z = poses_test[pose].Dz;
-											params_OptiX.F.x = poses_test[pose].Fx; params_OptiX.F.y = poses_test[pose].Fy; params_OptiX.F.z = poses_test[pose].Fz;
-											params_OptiX.copyBitmapToHostMemory = true;
+											params_OptiX->O.x = poses_test[pose].Ox; params_OptiX->O.y = poses_test[pose].Oy; params_OptiX->O.z = poses_test[pose].Oz;
+											params_OptiX->R.x = poses_test[pose].Rx; params_OptiX->R.y = poses_test[pose].Ry; params_OptiX->R.z = poses_test[pose].Rz;
+											params_OptiX->D.x = poses_test[pose].Dx; params_OptiX->D.y = poses_test[pose].Dy; params_OptiX->D.z = poses_test[pose].Dz;
+											params_OptiX->F.x = poses_test[pose].Fx; params_OptiX->F.y = poses_test[pose].Fy; params_OptiX->F.z = poses_test[pose].Fz;
+											params_OptiX->copyBitmapToHostMemory = true;
 
 											// *** *** *** *** ***
 
@@ -2381,35 +1768,41 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 											LARGE_INTEGER lpPerformanceCount2;
 
 											QueryPerformanceCounter(&lpPerformanceCount1);
-											result = RenderOptiX(params_OptiX);
+
+											if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX);
+											else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX);
+											else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX);
+											else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX);
+											else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX);
+
 											QueryPerformanceCounter(&lpPerformanceCount2);
 											//swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 											//WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
 											// *** *** *** *** ***
 
-											for (int i = 0; i < params_OptiX.height; ++i) {
-												for (int j = 0; j < params_OptiX.width; ++j) {
-													int color_out = params_OptiX.bitmap_host[(i * params_OptiX.width) + j];
+											for (int i = 0; i < params_OptiX->height; ++i) {
+												for (int j = 0; j < params_OptiX->width; ++j) {
+													int color_out = params_OptiX->bitmap_host[(i * params_OptiX->width) + j];
 													int R_out_i = color_out >> 16;
 													int G_out_i = (color_out >> 8) & 255;
 													int B_out_i = color_out & 255;
-													float R_out = R_out_i / 255.0f;
-													float G_out = G_out_i / 255.0f;
-													float B_out = B_out_i / 255.0f;
+													float R_out = R_out_i / 256.0f;
+													float G_out = G_out_i / 256.0f;
+													float B_out = B_out_i / 256.0f;
 
-													int color_ref = bitmap_ref_test[(pose * params_OptiX.width * params_OptiX.height) + ((i * params_OptiX.width) + j)];
+													int color_ref = bitmap_ref_test[(pose * params_OptiX->width * params_OptiX->height) + ((i * params_OptiX->width) + j)];
 													int R_ref_i = color_ref >> 16;
 													int G_ref_i = (color_ref >> 8) & 255;
 													int B_ref_i = color_ref & 255;
-													float R_ref = R_ref_i / 255.0f;
-													float G_ref = G_ref_i / 255.0f;
-													float B_ref = B_ref_i / 255.0f;
+													float R_ref = R_ref_i / 256.0f;
+													float G_ref = G_ref_i / 256.0f;
+													float B_ref = B_ref_i / 256.0f;
 
 													poseMSE += (((R_out - R_ref) * (R_out - R_ref)) + ((G_out - G_ref) * (G_out - G_ref)) + ((B_out - B_ref) * (B_out - B_ref)));
 												}
 											}
-											poseMSE /= 3.0 * params_OptiX.width * params_OptiX.height;
+											poseMSE /= 3.0 * params_OptiX->width * params_OptiX->height;
 											double posePSNR = -10.0 * (log(poseMSE) / log(10.0));
 
 											double poseFPS = *((long long int *) &lpFrequency) / ((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1)));
@@ -2447,13 +1840,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 									}
 									// !!! !!! !!!
 
+									config.ray_termination_T_threshold = ray_termination_T_threshold_training;
+									SetConfigurationOptiX(config);
+
 									// *** *** *** *** ***
 
 									if (poses_indices[poseNum_training] == 0) {
 										swprintf(consoleBuffer, 256, L"****************************************************************************************************\n");
 										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-										swprintf(consoleBuffer, 256, L"LOSS: %.20lf\n", params[0].loss / (3.0 * bitmapWidth * bitmapHeight * 1));
+										swprintf(consoleBuffer, 256, L"LOSS: %.20lf\n", ((SRenderParams<0> *)params)[0].loss / (3.0 * bitmapWidth * bitmapHeight * 1));
 										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
 										swprintf(consoleBuffer, 256, L"EPOCH NUM: %d\n", epochNum);
@@ -2496,43 +1892,64 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 									training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
 									// !!! !!! !!!
 
-									// *** *** *** *** ***
-
 									if (
-										(params_OptiX.epoch % config.saving_frequency == 0) ||
-										(params_OptiX.epoch == config.end_epoch)
+										(params_OptiX->epoch % config.evaluation_frequency == config.evaluation_epoch) ||
+										(params_OptiX->epoch == config.end_epoch)
 									) {
-										DumpParameters(params_OptiX);
-										DumpParametersToPLYFile(params_OptiX);
-
 										FILE *f;
 
 										fopen_s(&f, "Training_Time.txt", "at");
-										fprintf(f, "%d: %.2lf,\n", params_OptiX.epoch, training_time);
+										fprintf(f, "%d: %.2lf,\n", params_OptiX->epoch, training_time);
 										fclose(f);
 									}
 
-									if (params_OptiX.epoch == config.end_epoch)
+									// *** *** *** *** ***
+
+									if (
+										(params_OptiX->epoch % config.saving_frequency == 0) ||
+										(params_OptiX->epoch == config.end_epoch)
+									) {
+										if      constexpr (SH_degree == 0) result = DumpParametersOptiXSH0(*params_OptiX);
+										else if constexpr (SH_degree == 1) result = DumpParametersOptiXSH1(*params_OptiX);
+										else if constexpr (SH_degree == 2) result = DumpParametersOptiXSH2(*params_OptiX);
+										else if constexpr (SH_degree == 3) result = DumpParametersOptiXSH3(*params_OptiX);
+										else if constexpr (SH_degree == 4) result = DumpParametersOptiXSH4(*params_OptiX);
+																				
+										if      constexpr (SH_degree == 0) result = DumpParametersToPLYFileOptiXSH0(*params_OptiX);
+										else if constexpr (SH_degree == 1) result = DumpParametersToPLYFileOptiXSH1(*params_OptiX);
+										else if constexpr (SH_degree == 2) result = DumpParametersToPLYFileOptiXSH2(*params_OptiX);
+										else if constexpr (SH_degree == 3) result = DumpParametersToPLYFileOptiXSH3(*params_OptiX);
+										else if constexpr (SH_degree == 4) result = DumpParametersToPLYFileOptiXSH4(*params_OptiX);
+									}
+
+									if (params_OptiX->epoch == config.end_epoch)
 										PostQuitMessage(0); // !!! !!! !!!
 
-									if (params_OptiX.epoch % 10 == 0) cameraChanged = true;
+									if (params_OptiX->epoch % 10 == 0) cameraChanged = true;
 								}
 							} else {
 								bool result;
 
-								params_OptiX.O.x = Ox; params_OptiX.O.y = Oy; params_OptiX.O.z = Oz;
-								params_OptiX.R.x = Rx; params_OptiX.R.y = Ry; params_OptiX.R.z = Rz;
-								params_OptiX.D.x = Dx; params_OptiX.D.y = Dy; params_OptiX.D.z = Dz;
-								params_OptiX.F.x = Fx; params_OptiX.F.y = Fy; params_OptiX.F.z = Fz;
-								params_OptiX.copyBitmapToHostMemory = true;
+								params_OptiX->O.x = Ox; params_OptiX->O.y = Oy; params_OptiX->O.z = Oz;
+								params_OptiX->R.x = Rx; params_OptiX->R.y = Ry; params_OptiX->R.z = Rz;
+								params_OptiX->D.x = Dx; params_OptiX->D.y = Dy; params_OptiX->D.z = Dz;
+								params_OptiX->F.x = Fx; params_OptiX->F.y = Fy; params_OptiX->F.z = Fz;
+								params_OptiX->copyBitmapToHostMemory = true;
 
-								#ifdef VISUALIZATION
-									result = RenderOptiXMesh(params_OptiX, params_OptiXMesh);
-								#else
-									result = RenderOptiX(params_OptiX);
-								#endif
+								config.ray_termination_T_threshold = 0.01f;
+								SetConfigurationOptiX(config);
+
+								if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX);
+								else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX);
+								else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX);
+								else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX);
+								else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX);
+
 								swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+								config.ray_termination_T_threshold = ray_termination_T_threshold_training;
+								SetConfigurationOptiX(config);
 
 								// *** *** *** *** ***
 
@@ -2558,6 +1975,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 	}
     return 0;
 }
+
+// *************************************************************************************************
 
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
     UNREFERENCED_PARAMETER(lParam);
