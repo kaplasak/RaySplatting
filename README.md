@@ -5,22 +5,6 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 | :---- |
 | RaySplats: Ray Tracing based Gaussian Splatting [https://arxiv.org/pdf/2501.19196.pdf](http://arxiv.org/abs/2501.19196)|
 
-# Features
-- Spherical harmonics support up to the degree **4**.
-- Interactive Windows viewer / optimizer application allowing to preview the trained model state in real time.
-- Highly efficient pure Gaussian renderer (no embedding primitive mesh approximation).
-- Highly configurable optimizer based on the convenient configuration file.
-- Support for both the **Blender** and **COLMAP** data sets (after some preprocessing by the 3DGS).
-
-## Controls in the interactive Windows viewer / optimizer application
-
-- **Double Left Click**: Toggle between the **static camera** and the **free roam** mode.
-- **Mouse Movement**: Rotate the camera in the **free roam** mode.
-- **W / S**: Move forward / backward.
-- **A / D**: Step left / right.
-- **Spacebar / C**: Move up / down.
-- **[ / ]**: Switch the camera to the previous / next rendering pose.
-
 <img src=assets/gif1.gif height="300" class="center"> 
 <br>
 
@@ -37,6 +21,22 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
     <td><img src=assets/screenshot4.png height="200" width="300" class="center"> </td>
   </tr>
 </table>
+
+# Features
+- Spherical harmonics support up to the degree **4**.
+- Interactive Windows viewer / optimizer application allowing to preview the trained model state in real time.
+- Highly efficient pure Gaussian renderer (no embedding primitive mesh approximation).
+- Highly configurable optimizer based on the convenient configuration file.
+- Support for both the **Blender** and **COLMAP** data sets (after some preprocessing by the 3DGS).
+
+## Controls in the interactive Windows viewer / optimizer application
+
+- **Double Left Click**: Toggle between the **static camera** and the **free roam** mode.
+- **Mouse Movement**: Rotate the camera in the **free roam** mode.
+- **W / S**: Move forward / backward.
+- **A / D**: Step left / right.
+- **Spacebar / C**: Move up / down.
+- **[ / ]**: Switch the camera to the previous / next rendering pose.
 
 # RaySplatting Viewer
 ![image](https://github.com/user-attachments/assets/9a9d61cb-f54a-4301-8a52-4c2d0ce2cc72)
