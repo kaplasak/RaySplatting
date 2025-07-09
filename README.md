@@ -30,7 +30,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 - Highly configurable optimizer based on the convenient configuration file.
 - Support for both the **Blender** and **COLMAP** data sets (after some preprocessing by the 3DGS).
 
-## Controls in the interactive Windows viewer / optimizer application
+# Controls in the interactive Windows viewer / optimizer application
 
 - **Double Left Click**: Toggle between the **static camera** and the **free roam** mode.
 - **Mouse Movement**: Rotate the camera in the **free roam** mode.
@@ -83,86 +83,86 @@ We are actively developing new features, including:
 
 Stay tuned for updates and improvements!
 
+# Prerequisites:
+
+- Visual Studio 2019 Enterprise;
+- CUDA Toolkit 12.4.1;
+- NVIDIA OptiX SDK 8.0.0;
+
 # Building the interactive Windows viewer / optimizer application
 
-1. Prerequisites:
------------------
-- Install Visual Studio 2019 Enterprise;
-- Install CUDA Toolkit 12.4.1;
-- Install NVIDIA OptiX SDK 8.0.0;
+- Create the new Windows Desktop Application project and name it "RaySplats";
+- Remove the newly generated RaySplats.cpp file containing the code template;
+- In **Build Dependencies** -> **Build Customizations...** select the checkbox matching your installed CUDA version. On our test system, we had to select the following checkbox:
 
-2. Compiling the CUDA static library:
-------------------------------------
-- Create the new CUDA 12.4 Runtime project and name it "RaySplattingCUDA";
-- Remove the newly created kernel.cu file with the code template;
-- Add all the files from the directory "RaySplattingCUDA" to the project;
-- Change project's Configuration to "Release, x64";
-- Add OptiX "include" directory path to the project's Include Directories. On our test system, we had to add the following path:
+  **CUDA 12.4(.targets, .props)**
+  
+- Add all the files from the directory "RaySplats" to the project;
+- In the project's Properties set **Configuration** to **"Release"** and **Platform** to **"x64"**;
+- In **Properties** -> **Configuration Properties** -> **CUDA C/C++** -> **Common** -> **Generate Relocatable Device Code** select **Yes (-rdc=true)**;
+- For file "shaders.cuh" in **Properties** -> **Configuration Properties** -> **General** -> **Item Type** select **"CUDA C/C++**;
+- For files: "shaders.cuh", "shaders_SH0.cu", "shaders_SH1.cu", "shaders_SH2.cu", "shaders_SH3.cu" and "shaders_SH4.cu" in **Properties** -> **Configuration Properties** -> **CUDA C/C++** -> **Common**:
+  - Change the suffix of **Compiler Output (obj/cubin)** from **".obj"** to **".ptx"**;
+  - In **Generate Relocatable Device Code** select **No**;
+  - In **NVCC Compilation Type** select **Generate device-only .ptx file (-ptx)"**;
+- In **Properties** -> **Configuration Properties** -> **VC++ Directories** -> **Include Directories** add OptiX "include" directory path. On our test system, we had to add the following path:
+  ```plaintext
+  "C:\ProgramData\NVIDIA Corporation\OptiX SDK 8.0.0\include"
+  ```
+- In **Properties** -> **Configuration Properties** -> **CUDA C/C++** -> **Device** -> **Code Generation** type the compute capability and microarchitecture version of your GPU. On our test system with RTX 4070 GPU we typed:
+  ```plaintext
+  "compute_89,sm_89";
+  ```
+- In **Properties** -> **Configuration Properties** -> **Linker** -> **Input** -> **Additional Dependencies** add three new lines containing:
+  ```plaintext
+  "cuda.lib"
+  ```
+  ```plaintext
+  "cudart.lib"
+  ```
+  ```plaintext
+  "cufft.lib"
+  ```
+- In each of two different blocks of code in file InitializeOptiXRenderer.cu:
+  ```plaintext
+  if      constexpr (SH_degree == 0) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH0.cu.ptx", "rb");
+  else if constexpr (SH_degree == 1) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH1.cu.ptx", "rb");
+  else if constexpr (SH_degree == 2) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH2.cu.ptx", "rb");
+  else if constexpr (SH_degree == 3) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH3.cu.ptx", "rb");
+  else if constexpr (SH_degree == 4) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH4.cu.ptx", "rb");
+  ```
+  and
+  ```plaintext
+  if      constexpr (SH_degree == 0) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH0.cu.ptx", "rt");
+  else if constexpr (SH_degree == 1) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH1.cu.ptx", "rt");
+  else if constexpr (SH_degree == 2) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH2.cu.ptx", "rt");
+  else if constexpr (SH_degree == 3) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH3.cu.ptx", "rt");
+  else if constexpr (SH_degree == 4) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH4.cu.ptx", "rt");
+  ```
+  replace the provided path with the path to the *.ptx compiled shaders files on your hdd.
 
-"C:\ProgramData\NVIDIA Corporation\OptiX SDK 8.0.0\include"
+# Training your first model:
 
-- In Properties -> Configuration Properties -> CUDA C/C++ -> Device -> Code Generation type the compute capability and microarchitecture version of your GPU. On our test system with RTX 4070 GPU we added "compute_89,sm_89";
-- In Properties -> Configuration Properties -> General -> Configuration Type select "Static library (.lib)";
-- For files: "shaders.cu" and "shadersMesh.cu" in Properties -> Configuration Properties -> CUDA C/C++ change the suffix of Compiler Output (obj/cubin) from ".obj" to ".ptx";
-- For files: "shaders.cu" and "shadersMesh.cu" in Properties -> Configuration Properties -> CUDA C/C++ -> NVCC Compilation Type select "Generate device-only .ptx file (-ptx)";
-- Make the following changes in the file kernel2.cu specifying the location of the compiled *.ptx shader files:
-
-Line 192:
-FILE *f = fopen("<location of the compiled *.ptx shader files>/shaders.cu.ptx", "rb");
-
-Line 201:
-f = fopen("<location of the compiled *.ptx shader files>/shaders.cu.ptx", "rb");
-
-Line 4340:
-FILE *f = fopen("<location of the compiled *.ptx shader files>/shadersMesh.cu.ptx", "rb");
-
-Line 4349:
-f = fopen("<location of the compiled *.ptx shader files>/shadersMesh.cu.ptx", "rb");
-
-On our test system, we used the following paths as the string literal passed to the fopen function:
-
-"C:/Users/\<Windows username>/source/repos/RaySplattingCUDA/RaySplattingCUDA/x64/Release/shaders.cu.ptx"
-<br>
-"C:/Users/\<Windows username>/source/repos/RaySplattingCUDA/RaySplattingCUDA/x64/Release/shadersMesh.cu.ptx"
-
-- Build the project;
-
-3. Compiling the Windows interactive optimizer application:
------------------------------------------------------------
-- Create the new Windows Desktop Application project and name it "RaySplattingWindows";
-- Remove the newly generated RaySplattingWindows.cpp file with the code template;
-- Add all the files from the directory "RaySplattingWindows" to the project;
-- Change project's Configuration to "Release, x64";
-- In Properties -> Configuration Properties -> Linker -> Input -> Additional Dependencies add new lines:
-
-"RaySplattingCUDA.lib" <br>
-"cuda.lib" <br>
-"cudart.lib" <br>
-"cufft.lib" <br>
-
-- In Properties -> Configuration Properties -> Linker -> General -> Additional Library Directories add the "lib\x64" path of your CUDA toolkit. On our test system, we had to add the following path:
-
-"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\lib\x64"
-
-- In Properties -> Configuration Properties -> Linker -> General -> Additional Library Directories add the path of the directory containing your compiled CUDA static library. On our test system, we had to add the following path:
-
-"C:\Users\\\<Windows username>\source\repos\RaySplattingCUDA\x64\Release"
-
-4. Training the first model:
-----------------------------
-- Create the directory "dump" in the main RaySplattingWindows project's directory and then create the subdirectory "dump\save" in the main RaySplattingWindows project's directory. The application will store the checkpoints here. On our test system we created those directories in the following directory:
-
-"C:\Users\\\<Windows username>\source\repos\RaySplattingWindows\RaySplattingWindows"
-
-- Train the model with 3DGS for some small number of epochs (for example 100) on some dataset (for example: "truck" from "Tanks and Temples");
+- Create the directory "dump" in the main RaySplats project's directory and then create the subdirectory "dump\save". The application will store the checkpoints here together with the output PLY files. On our test system we created those directories in the following directory:
+  ```plaintext
+  "C:\Users\<Windows username>\source\repos\RaySplats\RaySplats"
+  ```  
+- Train the model with 3DGS for some small number of iterations (for example 100) on some dataset (for example: "lego" from "NeRF synthetic" set);
 - Copy the output file cameras.json to the dataset main directory;
 - Convert all of the files in the subdirectory "images" located in the dataset main directory to 24-bit *.bmp file format without changing their names;
 - Copy the configuration file "config.txt" to the project's main directory. On our test system we copied it to the following directory:
-
-"C:\Users\\\<Windows username>\source\repos\RaySplattingWindows\RaySplattingWindows"
-
-- In lines: 2 and 3 of the configuration file specify the location of the dataset main directory and the output 3DGS *.ply file obtained after short model pretraining (Important! With --sh_degree 0 as RaySplats uses the RGB model);
-- Run the "RaySplattingWindows" project from the Visual Studio IDE;
+  ```plaintext
+  "C:\Users\<Windows username>\source\repos\RaySplats\RaySplats"
+  ```
+- In lines: 2 and 3 of the configuration file specify the location of the dataset main directory and the output 3DGS *.ply file obtained after short model pretraining (**Important!** The spherical harmonics degree used for pretraining and the target one specified in the line 7 of the config file don't have to match);
+- In lines: 8-10 of the configuration file specify the background color that matches the background color used for pretraining using the following formula:
+  
+  R' = (R + 0.5) / 256<br>
+  G' = (G + 0.5) / 256<br>
+  B' = (B + 0.5) / 256<br>
+  
+  where R, G and B are the integer non-negative background color coordinates in the range 0-255.
+- Run the "RaySplats" project from the Visual Studio IDE;
 
 
 
