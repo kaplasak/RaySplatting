@@ -69,7 +69,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
   ```
 - In **Properties** -> **Configuration Properties** -> **CUDA C/C++** -> **Device** -> **Code Generation** type the compute capability and microarchitecture version of your GPU. On our test system with RTX 4070 GPU we typed:
   ```plaintext
-  "compute_89,sm_89";
+  "compute_89,sm_89"
   ```
 - In **Properties** -> **Configuration Properties** -> **Linker** -> **Input** -> **Additional Dependencies** add three new lines containing:
   ```plaintext
