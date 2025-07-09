@@ -32,7 +32,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 
 # Controls in the interactive Windows viewer / optimizer application
 
-<img src="assets/app_main_window.png" height="200" width="300" class="center">
+<img src="assets/app_main_window.png">
 
 - **Double Left Click**: Toggle between the **static camera** and the **free roam** mode.
 - **Mouse Movement**: Rotate the camera in the **free roam** mode.
