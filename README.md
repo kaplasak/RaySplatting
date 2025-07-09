@@ -37,7 +37,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 - **W / S**: Move forward / backward.
 - **A / D**: Step left / right.
 - **Spacebar / C**: Move up / down.
-- **[ / ]**: Switch the camera to the previous / next rendering pose.
+- **[ / ]**: Switch the camera to the previous / next training pose.
 
 # RaySplatting Viewer
 ![image](https://github.com/user-attachments/assets/9a9d61cb-f54a-4301-8a52-4c2d0ce2cc72)
