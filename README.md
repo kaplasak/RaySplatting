@@ -27,7 +27,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 - Interactive Windows viewer / optimizer application allowing to preview the trained model state in the real time.
 - Support for the **PLY** trained model output format.
 - Highly efficient pure Gaussian renderer (no embedding primitive mesh approximation).
-- Highly configurable optimizer based on the convenient configuration file.
+- Highly configurable optimizer based on the convenient text configuration file.
 - Support for both the **Blender** and **COLMAP** data sets (after some preprocessing by the 3DGS).
 
 # Controls in the interactive Windows viewer / optimizer application
