@@ -101,10 +101,6 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 
 # Training your first model:
 
-- Create the directory "dump" in the main RaySplats project's directory and then create the subdirectory "dump\save". The application will store the checkpoints here together with the output PLY files. On our test system we created those directories in the following directory:
-  ```plaintext
-  "C:\Users\<Windows username>\source\repos\RaySplats\RaySplats"
-  ```  
 - Train the model with 3DGS for some small number of iterations (for example 100) on some dataset (for example: "lego" from "NeRF synthetic" set);
 - Copy the output file cameras.json to the dataset main directory;
 - Convert all of the files in the subdirectory "images" located in the dataset main directory to 24-bit *.bmp file format without changing their names;
