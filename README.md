@@ -29,6 +29,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 - Highly efficient pure Gaussian renderer (no embedding primitive mesh approximation).
 - Highly configurable optimizer based on the convenient text configuration file.
 - Support for both the **Blender** and **COLMAP** data sets (after some preprocessing by the 3DGS).
+- Built-in evaluation of the model and visualization to the *.bmp file with the configurable frequency.
 
 # Controls in the interactive Windows viewer / optimizer application
 
@@ -40,6 +41,7 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 - **A / D**: Step left / right.
 - **Spacebar / C**: Move up / down.
 - **[ / ]**: Switch the camera to the previous / next training pose.
+- **Print Screen**: Make screenshot and save it to the 24-bit *.bmp file.
 
 # Prerequisites:
 
