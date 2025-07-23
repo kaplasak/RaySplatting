@@ -117,6 +117,9 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
   G' = (G + 0.5) / 256<br>
   B' = (B + 0.5) / 256<br>
 
+  where R, G and B are the integer non-negative background color coordinates in the range 0-255.
+- Run the "RaySplats" project from the Visual Studio IDE;
+
 # RaySplatting Viewer
 ![image](https://github.com/user-attachments/assets/9a9d61cb-f54a-4301-8a52-4c2d0ce2cc72)
 ![](assets/tutorial.mp4)
@@ -160,9 +163,6 @@ We are actively developing new features, including:
 - **And much more!**  
 
 Stay tuned for updates and improvements!
-  
-  where R, G and B are the integer non-negative background color coordinates in the range 0-255.
-- Run the "RaySplats" project from the Visual Studio IDE;
 
 
 
