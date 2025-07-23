@@ -35,9 +35,29 @@ __constant__ float bg_color_R;
 __constant__ float bg_color_G;
 __constant__ float bg_color_B;
 
-__constant__ float lr_RGB;
-__constant__ float lr_RGB_exponential_decay_coefficient;
-__constant__ float lr_RGB_final;
+__constant__ float lr_SH0;
+__constant__ float lr_SH0_exponential_decay_coefficient;
+__constant__ float lr_SH0_final;
+
+__constant__ int   SH1_activation_iter;
+__constant__ float lr_SH1;
+__constant__ float lr_SH1_exponential_decay_coefficient;
+__constant__ float lr_SH1_final;
+
+__constant__ int   SH2_activation_iter;
+__constant__ float lr_SH2;
+__constant__ float lr_SH2_exponential_decay_coefficient;
+__constant__ float lr_SH2_final;
+
+__constant__ int   SH3_activation_iter;
+__constant__ float lr_SH3;
+__constant__ float lr_SH3_exponential_decay_coefficient;
+__constant__ float lr_SH3_final;
+
+__constant__ int   SH4_activation_iter;
+__constant__ float lr_SH4;
+__constant__ float lr_SH4_exponential_decay_coefficient;
+__constant__ float lr_SH4_final;
 
 __constant__ float lr_alpha;
 __constant__ float lr_alpha_exponential_decay_coefficient;

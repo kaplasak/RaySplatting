@@ -169,9 +169,29 @@ extern __constant__ float bg_color_R;
 extern __constant__ float bg_color_G;
 extern __constant__ float bg_color_B;
 
-extern __constant__ float lr_RGB;
-extern __constant__ float lr_RGB_exponential_decay_coefficient;
-extern __constant__ float lr_RGB_final;
+extern __constant__ float lr_SH0;
+extern __constant__ float lr_SH0_exponential_decay_coefficient;
+extern __constant__ float lr_SH0_final;
+
+extern __constant__ int   SH1_activation_iter;
+extern __constant__ float lr_SH1;
+extern __constant__ float lr_SH1_exponential_decay_coefficient;
+extern __constant__ float lr_SH1_final;
+
+extern __constant__ int   SH2_activation_iter;
+extern __constant__ float lr_SH2;
+extern __constant__ float lr_SH2_exponential_decay_coefficient;
+extern __constant__ float lr_SH2_final;
+
+extern __constant__ int   SH3_activation_iter;
+extern __constant__ float lr_SH3;
+extern __constant__ float lr_SH3_exponential_decay_coefficient;
+extern __constant__ float lr_SH3_final;
+
+extern __constant__ int   SH4_activation_iter;
+extern __constant__ float lr_SH4;
+extern __constant__ float lr_SH4_exponential_decay_coefficient;
+extern __constant__ float lr_SH4_final;
 
 extern __constant__ float lr_alpha;
 extern __constant__ float lr_alpha_exponential_decay_coefficient;
@@ -214,7 +234,7 @@ struct SbtRecord {
 
 // *** *** *** *** ***
 
-void LoadFromFile(const char *fPath, int epochNum, const char *fExtension, void *buf, int size);
+void LoadFromFile(const char *dirPath, int epochNum, const char *fName, void *buf, int size);
 
 __global__ void ComputeInverseTransformMatrix(
 	float4 *GC_part_2, float4 *GC_part_3, float2 *GC_part_4,
@@ -255,15 +275,6 @@ __device__ float3 RandomMultinormalFloat(
 
 // *** *** *** *** ***
 
-struct SCamera {
-	float Ox; float Oy; float Oz;
-	float Rx; float Ry; float Rz;
-	float Dx; float Dy; float Dz;
-	float Fx; float Fy; float Fz;
-};
-
-// *** *** *** *** ***
-
 template<int SH_degree>
 struct SGaussianComponent {
 	float mX, mY, mZ;
@@ -297,86 +308,16 @@ struct SGaussianComponent<0> {
 };
 // *** *** *** *** ***
 
-struct SLBVHTreeNode {
-	char info;
-	int lNode, rNode;
-	float lB, rB;
-	float uB, dB;
-	float bB, fB;
-};
-
-// *** *** *** *** ***
-
 template<int SH_degree>
 struct SRenderParams {
-	float Ox; float Oy; float Oz;
-	float Rx; float Ry; float Rz;
-	float Dx; float Dy; float Dz;
-	float Fx; float Fy; float Fz;
 	float double_tan_half_fov_x;
 	float double_tan_half_fov_y;
-	void* bitmap;
+	void *bitmap;
 	int w; int h;
-	SLBVHTreeNode* tree;
 	SGaussianComponent<SH_degree> *GC;
 	int numberOfGaussians;
-
-	int* d;
-	int D;
-	int H;
-
-	int threadsNum;
-	int threadId;
-	bool volumetric;
-
-	// !!! !!! !!!
-	SCamera *poses;
 	unsigned *bitmap_ref;
-	int poseNum;
-	int epoch;
 	int NUMBER_OF_POSES;
-	double loss;
-
-	void *dL_dparams_1;
-	void *dL_dparams_2;
-	void *dL_dparams_3;
-	void *dL_dparams_4;
-
-	void *m1, *m2, *m3, *m4;
-	void *v1, *v2, *v3, *v4;
-
-	int *dump;
-	// !!! !!! !!!
-
-	// *** *** *** *** ***
-
-	// !!! !!! !!!
-	cufftHandle planr2c;
-	cufftHandle planc2r;
-
-	COMPLEX *dev_F_1;
-	COMPLEX *dev_F_2;
-
-	REAL *dev_bitmap_ref_R;
-	REAL *dev_bitmap_ref_G;
-	REAL *dev_bitmap_ref_B;
-	REAL *dev_mu_bitmap_ref_R;
-	REAL *dev_mu_bitmap_ref_G;
-	REAL *dev_mu_bitmap_ref_B;
-	REAL *dev_mu_bitmap_out_bitmap_ref_R;
-	REAL *dev_mu_bitmap_out_bitmap_ref_G;
-	REAL *dev_mu_bitmap_out_bitmap_ref_B;
-	REAL *dev_mu_bitmap_ref_R_square;
-	REAL *dev_mu_bitmap_ref_G_square;
-	REAL *dev_mu_bitmap_ref_B_square;
-
-	REAL *dev_mu_bitmap_out_R;
-	REAL *dev_mu_bitmap_out_G;
-	REAL *dev_mu_bitmap_out_B;
-	REAL *dev_mu_bitmap_out_R_square;
-	REAL *dev_mu_bitmap_out_G_square;
-	REAL *dev_mu_bitmap_out_B_square;
-	// !!! !!! !!!
 };
 
 // *************************************************************************************************
@@ -1047,9 +988,29 @@ struct SOptiXRenderConfig {
 	float bg_color_G;
 	float bg_color_B;
 
-	float lr_RGB;
-	float lr_RGB_exponential_decay_coefficient;
-	float lr_RGB_final;
+	float lr_SH0;
+	float lr_SH0_exponential_decay_coefficient;
+	float lr_SH0_final;
+
+	int   SH1_activation_iter;
+	float lr_SH1;
+	float lr_SH1_exponential_decay_coefficient;
+	float lr_SH1_final;
+
+	int   SH2_activation_iter;
+	float lr_SH2;
+	float lr_SH2_exponential_decay_coefficient;
+	float lr_SH2_final;
+
+	int   SH3_activation_iter;
+	float lr_SH3;
+	float lr_SH3_exponential_decay_coefficient;
+	float lr_SH3_final;
+
+	int   SH4_activation_iter;
+	float lr_SH4;
+	float lr_SH4_exponential_decay_coefficient;
+	float lr_SH4_final;
 
 	float lr_alpha;
 	float lr_alpha_exponential_decay_coefficient;
@@ -1080,12 +1041,37 @@ struct SOptiXRenderConfig {
 	float split_ratio;
 	float lambda;
 	float ray_termination_T_threshold;
+	float ray_termination_T_threshold_inference;
 	float last_significant_Gauss_alpha_gradient_precision;
 	float chi_square_squared_radius;
 	int max_Gaussians_per_ray;
+	
 	int saving_frequency;
-	int evaluation_frequency;
-	int evaluation_epoch;
+	int saving_iter;
+
+	int saving_frequency_PLY;
+	int saving_iter_PLY;
+
+	bool evaluation_on_startup_train;
+	int evaluation_frequency_train;
+	int evaluation_iter_train;
+	bool evaluation_on_finish_train;
+
+	bool evaluation_on_startup_test;
+	int evaluation_frequency_test;
+	int evaluation_iter_test;
+	bool evaluation_on_finish_test;
+
+	bool visualization_on_startup_train;
+	int visualization_frequency_train;
+	int visualization_iter_train;
+	bool visualization_on_finish_train;
+
+	bool visualization_on_startup_test;
+	int visualization_frequency_test;
+	int visualization_iter_test;
+	bool visualization_on_finish_test;
+
 	int max_Gaussians_per_model;
 };
 

@@ -119,7 +119,7 @@ struct SPLYFileStruct<0> {
 // *************************************************************************************************
 
 template<int SH_degree>
-bool DumpParametersToPLYFileOptiX(SOptiXRenderParams<SH_degree>& params_OptiX) {
+bool DumpParametersToPLYFileOptiX(SOptiXRenderParams<SH_degree>& params_OptiX, char *dirPath) {
 	constexpr int numberOfPropertiesSH = (((SH_degree + 1) * (SH_degree + 1)) * 3) - 3;
 
 	// *** *** *** *** ***
@@ -308,10 +308,10 @@ bool DumpParametersToPLYFileOptiX(SOptiXRenderParams<SH_degree>& params_OptiX) {
 	// *** *** *** *** ***
 
 	FILE *f;
-	char fName[256];
+	char fPath[256];
 
-	sprintf_s(fName, "dump/save/%d.ply", params_OptiX.epoch);
-	fopen_s(&f, fName, "wb");
+	sprintf_s(fPath, "%s\\iter_%d.ply", dirPath, params_OptiX.epoch);
+	fopen_s(&f, fPath, "wb");
 
 	fprintf(f, "ply\n");
 	fprintf(f, "format binary_little_endian 1.0\n");
@@ -519,7 +519,7 @@ bool DumpParametersToPLYFileOptiX(SOptiXRenderParams<SH_degree>& params_OptiX) {
 
 	// *** *** *** *** ***
 
-	fopen_s(&f, fName, "ab");
+	fopen_s(&f, fPath, "ab");
 	fwrite(GC, sizeof(SPLYFileStruct<SH_degree>) * params_OptiX.numberOfGaussians, 1, f);
 	fclose(f);
 
@@ -576,30 +576,30 @@ Error:
 
 // *************************************************************************************************
 
-bool DumpParametersToPLYFileOptiXSH0(SOptiXRenderParams<0>& params_OptiX) {
-	return DumpParametersToPLYFileOptiX<0>(params_OptiX);
+bool DumpParametersToPLYFileOptiXSH0(SOptiXRenderParams<0>& params_OptiX, char *dirPath) {
+	return DumpParametersToPLYFileOptiX<0>(params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
 
-bool DumpParametersToPLYFileOptiXSH1(SOptiXRenderParams<1>& params_OptiX) {
-	return DumpParametersToPLYFileOptiX<1>(params_OptiX);
+bool DumpParametersToPLYFileOptiXSH1(SOptiXRenderParams<1>& params_OptiX, char *dirPath) {
+	return DumpParametersToPLYFileOptiX<1>(params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
 
-bool DumpParametersToPLYFileOptiXSH2(SOptiXRenderParams<2>& params_OptiX) {
-	return DumpParametersToPLYFileOptiX<2>(params_OptiX);
+bool DumpParametersToPLYFileOptiXSH2(SOptiXRenderParams<2>& params_OptiX, char *dirPath) {
+	return DumpParametersToPLYFileOptiX<2>(params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
 
-bool DumpParametersToPLYFileOptiXSH3(SOptiXRenderParams<3>& params_OptiX) {
-	return DumpParametersToPLYFileOptiX<3>(params_OptiX);
+bool DumpParametersToPLYFileOptiXSH3(SOptiXRenderParams<3>& params_OptiX, char *dirPath) {
+	return DumpParametersToPLYFileOptiX<3>(params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
 
-bool DumpParametersToPLYFileOptiXSH4(SOptiXRenderParams<4>& params_OptiX) {
-	return DumpParametersToPLYFileOptiX<4>(params_OptiX);
+bool DumpParametersToPLYFileOptiXSH4(SOptiXRenderParams<4>& params_OptiX, char *dirPath) {
+	return DumpParametersToPLYFileOptiX<4>(params_OptiX, dirPath);
 }

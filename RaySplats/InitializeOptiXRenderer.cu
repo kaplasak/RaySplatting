@@ -75,8 +75,7 @@ template<int SH_degree>
 bool InitializeOptiXRenderer(
 	SRenderParams<SH_degree> &params,
 	SOptiXRenderParams<SH_degree> &params_OptiX,
-	bool loadFromFile,
-	int epoch
+	char *dirPath
 ) {
 	cudaError_t error_CUDA;
 	OptixResult error_OptiX;
@@ -98,7 +97,7 @@ bool InitializeOptiXRenderer(
 	// *********************************************************************************************
 
 	FILE *f;
-
+	
 	if      constexpr (SH_degree == 0) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH0.cu.ptx", "rb");
 	else if constexpr (SH_degree == 1) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH1.cu.ptx", "rb");
 	else if constexpr (SH_degree == 2) f = fopen("C:/Users/pc/source/repos/RaySplats/RaySplats/x64/Release/shaders_SH2.cu.ptx", "rb");
@@ -352,9 +351,9 @@ bool InitializeOptiXRenderer(
 
 	// *********************************************************************************************
 
-	if (!loadFromFile) {
+	if (dirPath == NULL) {
 		params_OptiX.numberOfGaussians = params.numberOfGaussians; // !!! !!! !!!
-		if ((epoch + 1 <= densification_end_epoch_host) && (params_OptiX.numberOfGaussians <= max_Gaussians_per_model_host)) { // !!! !!! !!!
+		if ((params_OptiX.epoch + 1 <= densification_end_epoch_host) && (params_OptiX.numberOfGaussians <= max_Gaussians_per_model_host)) { // !!! !!! !!!
 			params_OptiX.scatterBufferSize = params_OptiX.numberOfGaussians * 1.125f; // !!! !!! !!!
 			params_OptiX.maxNumberOfGaussians1 = params_OptiX.numberOfGaussians * 1.125f; // !!! !!! !!!
 			params_OptiX.maxNumberOfGaussians = params_OptiX.numberOfGaussians * REALLOC_MULTIPLIER2; // !!! !!! !!!
@@ -366,15 +365,15 @@ bool InitializeOptiXRenderer(
 	} else {
 		FILE *f;
 
-		char fName[256];
-		sprintf_s(fName, "dump/save/%d.GC1", epoch);
+		char fPath[256];
+		sprintf_s(fPath, "%s\\gc1_iter_%d.checkpoint", dirPath, params_OptiX.epoch);
 
-		fopen_s(&f, fName, "rb");
+		fopen_s(&f, fPath, "rb");
 		fseek(f, 0, SEEK_END);
 		params_OptiX.numberOfGaussians = ftell(f) / sizeof(float4); // !!! !!! !!!
 		fclose(f);
 
-		if ((epoch + 1 <= densification_end_epoch_host) && (params_OptiX.numberOfGaussians <= max_Gaussians_per_model_host)) { // !!! !!! !!!
+		if ((params_OptiX.epoch + 1 <= densification_end_epoch_host) && (params_OptiX.numberOfGaussians <= max_Gaussians_per_model_host)) { // !!! !!! !!!
 			params_OptiX.scatterBufferSize = params_OptiX.numberOfGaussians * 1.125f; // !!! !!! !!!
 			params_OptiX.maxNumberOfGaussians1 = params_OptiX.numberOfGaussians * 1.125f; // !!! !!! !!!
 			params_OptiX.maxNumberOfGaussians = params_OptiX.numberOfGaussians * REALLOC_MULTIPLIER2; // !!! !!! !!!
@@ -431,7 +430,7 @@ bool InitializeOptiXRenderer(
 
 	// *** *** *** *** ***
 
-	if (!loadFromFile) {
+	if (dirPath == NULL) {
 		for (int i = 0; i < params_OptiX.numberOfGaussians; ++i) {
 			GC_part_1[i].x = params.GC[i].R;
 			GC_part_1[i].y = params.GC[i].G;
@@ -556,46 +555,46 @@ bool InitializeOptiXRenderer(
 			}
 		}
 	} else {
-		LoadFromFile("dump/save", epoch, "GC1", GC_part_1, sizeof(float4) * params_OptiX.numberOfGaussians);
-		LoadFromFile("dump/save", epoch, "GC2", GC_part_2, sizeof(float4) * params_OptiX.numberOfGaussians);
-		LoadFromFile("dump/save", epoch, "GC3", GC_part_3, sizeof(float4) * params_OptiX.numberOfGaussians);
-		LoadFromFile("dump/save", epoch, "GC4", GC_part_4, sizeof(float2) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "gc1", GC_part_1, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "gc2", GC_part_2, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "gc3", GC_part_3, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "gc4", GC_part_4, sizeof(float2) * params_OptiX.numberOfGaussians);
 
 		// *** *** *** *** ***
 
 		// Spherical harmonics
 		if constexpr (SH_degree >= 1) {
-			LoadFromFile("dump/save", epoch, "GC_SH_1", GC_SH.GC_SH_1, sizeof(float4) * params_OptiX.numberOfGaussians);
-			LoadFromFile("dump/save", epoch, "GC_SH_2", GC_SH.GC_SH_2, sizeof(float4) * params_OptiX.numberOfGaussians);
+			LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_1", GC_SH.GC_SH_1, sizeof(float4) * params_OptiX.numberOfGaussians);
+			LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_2", GC_SH.GC_SH_2, sizeof(float4) * params_OptiX.numberOfGaussians);
 
 			if constexpr (SH_degree >= 2) {
-				LoadFromFile("dump/save", epoch, "GC_SH_3", GC_SH.GC_SH_3, sizeof(float4) * params_OptiX.numberOfGaussians);
-				LoadFromFile("dump/save", epoch, "GC_SH_4", GC_SH.GC_SH_4, sizeof(float4) * params_OptiX.numberOfGaussians);
-				LoadFromFile("dump/save", epoch, "GC_SH_5", GC_SH.GC_SH_5, sizeof(float4) * params_OptiX.numberOfGaussians);
-				LoadFromFile("dump/save", epoch, "GC_SH_6", GC_SH.GC_SH_6, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_3", GC_SH.GC_SH_3, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_4", GC_SH.GC_SH_4, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_5", GC_SH.GC_SH_5, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_6", GC_SH.GC_SH_6, sizeof(float4) * params_OptiX.numberOfGaussians);
 
 				if constexpr (SH_degree >= 3) {
-					LoadFromFile("dump/save", epoch, "GC_SH_7", GC_SH.GC_SH_7, sizeof(float4) * params_OptiX.numberOfGaussians);
-					LoadFromFile("dump/save", epoch, "GC_SH_8", GC_SH.GC_SH_8, sizeof(float4) * params_OptiX.numberOfGaussians);
-					LoadFromFile("dump/save", epoch, "GC_SH_9", GC_SH.GC_SH_9, sizeof(float4) * params_OptiX.numberOfGaussians);
-					LoadFromFile("dump/save", epoch, "GC_SH_10", GC_SH.GC_SH_10, sizeof(float4) * params_OptiX.numberOfGaussians);
-					LoadFromFile("dump/save", epoch, "GC_SH_11", GC_SH.GC_SH_11, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_7", GC_SH.GC_SH_7, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_8", GC_SH.GC_SH_8, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_9", GC_SH.GC_SH_9, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_10", GC_SH.GC_SH_10, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_11", GC_SH.GC_SH_11, sizeof(float4) * params_OptiX.numberOfGaussians);
 
 					if constexpr (SH_degree >= 4) {
-						LoadFromFile("dump/save", epoch, "GC_SH_12", GC_SH.GC_SH_12, sizeof(float4) * params_OptiX.numberOfGaussians);
-						LoadFromFile("dump/save", epoch, "GC_SH_13", GC_SH.GC_SH_13, sizeof(float4) * params_OptiX.numberOfGaussians);
-						LoadFromFile("dump/save", epoch, "GC_SH_14", GC_SH.GC_SH_14, sizeof(float4) * params_OptiX.numberOfGaussians);
-						LoadFromFile("dump/save", epoch, "GC_SH_15", GC_SH.GC_SH_15, sizeof(float4) * params_OptiX.numberOfGaussians);
-						LoadFromFile("dump/save", epoch, "GC_SH_16", GC_SH.GC_SH_16, sizeof(float4) * params_OptiX.numberOfGaussians);
-						LoadFromFile("dump/save", epoch, "GC_SH_17", GC_SH.GC_SH_17, sizeof(float4) * params_OptiX.numberOfGaussians);
-						LoadFromFile("dump/save", epoch, "GC_SH_18", GC_SH.GC_SH_18, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_12", GC_SH.GC_SH_12, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_13", GC_SH.GC_SH_13, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_14", GC_SH.GC_SH_14, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_15", GC_SH.GC_SH_15, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_16", GC_SH.GC_SH_16, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_17", GC_SH.GC_SH_17, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_18", GC_SH.GC_SH_18, sizeof(float4) * params_OptiX.numberOfGaussians);
 					} else
 						// !!! !!! !!!
-						LoadFromFile("dump/save", epoch, "GC_SH_12", GC_SH.GC_SH_12, sizeof(float) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_12", GC_SH.GC_SH_12, sizeof(float) * params_OptiX.numberOfGaussians);
 				}
 			} else
 				// !!! !!! !!!
-				LoadFromFile("dump/save", epoch, "GC_SH_3", GC_SH.GC_SH_3, sizeof(float) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "gc_sh_3", GC_SH.GC_SH_3, sizeof(float) * params_OptiX.numberOfGaussians);
 		}
 	}
 
@@ -1017,23 +1016,21 @@ Error:
 // *************************************************************************************************
 
 bool InitializeOptiXRendererSH0(
-	SRenderParams<0>& params,
-	SOptiXRenderParams<0>& params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	SRenderParams<0> &params,
+	SOptiXRenderParams<0> &params_OptiX,
+	char *dirPath = NULL
 ) {
-	return InitializeOptiXRenderer<0>(params, params_OptiX, loadFromFile, epoch);
+	return InitializeOptiXRenderer<0>(params, params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
 
 bool InitializeOptiXRendererSH1(
-	SRenderParams<1>& params,
-	SOptiXRenderParams<1>& params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	SRenderParams<1> &params,
+	SOptiXRenderParams<1> &params_OptiX,
+	char *dirPath = NULL
 ) {
-	return InitializeOptiXRenderer<1>(params, params_OptiX, loadFromFile, epoch);
+	return InitializeOptiXRenderer<1>(params, params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
@@ -1041,10 +1038,9 @@ bool InitializeOptiXRendererSH1(
 bool InitializeOptiXRendererSH2(
 	SRenderParams<2>& params,
 	SOptiXRenderParams<2>& params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 ) {
-	return InitializeOptiXRenderer<2>(params, params_OptiX, loadFromFile, epoch);
+	return InitializeOptiXRenderer<2>(params, params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
@@ -1052,10 +1048,9 @@ bool InitializeOptiXRendererSH2(
 bool InitializeOptiXRendererSH3(
 	SRenderParams<3>& params,
 	SOptiXRenderParams<3>& params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 ) {
-	return InitializeOptiXRenderer<3>(params, params_OptiX, loadFromFile, epoch);
+	return InitializeOptiXRenderer<3>(params, params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
@@ -1063,8 +1058,7 @@ bool InitializeOptiXRendererSH3(
 bool InitializeOptiXRendererSH4(
 	SRenderParams<4>& params,
 	SOptiXRenderParams<4>& params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 ) {
-	return InitializeOptiXRenderer<4>(params, params_OptiX, loadFromFile, epoch);
+	return InitializeOptiXRenderer<4>(params, params_OptiX, dirPath);
 }

@@ -6,8 +6,7 @@ template<int SH_degree>
 bool InitializeOptiXOptimizer(
 	SRenderParams<SH_degree> &params,
 	SOptiXRenderParams<SH_degree> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath
 ) {
 	cudaError_t error_CUDA;
 
@@ -306,7 +305,7 @@ bool InitializeOptiXOptimizer(
 
 	// ************************************************************************************************
 
-	if (!loadFromFile) {
+	if (dirPath == NULL) {
 		error_CUDA = cudaMemset(params_OptiX.m11, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
 		if (error_CUDA != cudaSuccess) goto Error;
 
@@ -476,25 +475,31 @@ bool InitializeOptiXOptimizer(
 				if (error_CUDA != cudaSuccess) goto Error;
 			}
 		}
+
+		// *** *** *** *** ***
+
+		// !!! !!! !!!
+		error_CUDA = cudaMemset(params_OptiX.counter2, 0, sizeof(unsigned) * 1);
+		if (error_CUDA != cudaSuccess) goto Error;
 	} else {
 		void *buf = malloc(sizeof(float4) * params_OptiX.numberOfGaussians);
 		if (buf == NULL) goto Error;
 
 		// *** *** *** *** ***
 
-		LoadFromFile("dump/save", epoch, "m1", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "m1", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 		error_CUDA = cudaMemcpy(params_OptiX.m11, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		LoadFromFile("dump/save", epoch, "m2", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "m2", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 		error_CUDA = cudaMemcpy(params_OptiX.m21, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		LoadFromFile("dump/save", epoch, "m3", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "m3", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 		error_CUDA = cudaMemcpy(params_OptiX.m31, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		LoadFromFile("dump/save", epoch, "m4", buf, sizeof(float2) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "m4", buf, sizeof(float2) * params_OptiX.numberOfGaussians);
 		error_CUDA = cudaMemcpy(params_OptiX.m41, buf, sizeof(float2) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 		if (error_CUDA != cudaSuccess) goto Error;
 
@@ -502,90 +507,90 @@ bool InitializeOptiXOptimizer(
 
 		// Spherical harmonics
 		if constexpr (SH_degree >= 1) {
-			LoadFromFile("dump/save", epoch, "m_SH_1", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+			LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_1", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 			error_CUDA = cudaMemcpy(params_OptiX.m_SH_1, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			LoadFromFile("dump/save", epoch, "m_SH_2", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+			LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_2", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 			error_CUDA = cudaMemcpy(params_OptiX.m_SH_2, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 			if (error_CUDA != cudaSuccess) goto Error;
 
 			if constexpr (SH_degree >= 2) {
-				LoadFromFile("dump/save", epoch, "m_SH_3", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_3", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 				error_CUDA = cudaMemcpy(params_OptiX.m_SH_3, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				LoadFromFile("dump/save", epoch, "m_SH_4", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_4", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 				error_CUDA = cudaMemcpy(params_OptiX.m_SH_4, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				LoadFromFile("dump/save", epoch, "m_SH_5", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_5", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 				error_CUDA = cudaMemcpy(params_OptiX.m_SH_5, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				LoadFromFile("dump/save", epoch, "m_SH_6", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_6", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 				error_CUDA = cudaMemcpy(params_OptiX.m_SH_6, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 				if (error_CUDA != cudaSuccess) goto Error;
 
 				if constexpr (SH_degree >= 3) {
-					LoadFromFile("dump/save", epoch, "m_SH_7", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_7", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 					error_CUDA = cudaMemcpy(params_OptiX.m_SH_7, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					LoadFromFile("dump/save", epoch, "m_SH_8", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_8", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 					error_CUDA = cudaMemcpy(params_OptiX.m_SH_8, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					LoadFromFile("dump/save", epoch, "m_SH_9", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_9", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 					error_CUDA = cudaMemcpy(params_OptiX.m_SH_9, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					LoadFromFile("dump/save", epoch, "m_SH_10", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_10", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 					error_CUDA = cudaMemcpy(params_OptiX.m_SH_10, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					LoadFromFile("dump/save", epoch, "m_SH_11", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_11", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 					error_CUDA = cudaMemcpy(params_OptiX.m_SH_11, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 					if (error_CUDA != cudaSuccess) goto Error;
 
 					if constexpr (SH_degree >= 4) {
-						LoadFromFile("dump/save", epoch, "m_SH_12", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_12", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.m_SH_12, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "m_SH_13", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_13", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.m_SH_13, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "m_SH_14", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_14", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.m_SH_14, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "m_SH_15", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_15", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.m_SH_15, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "m_SH_16", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_16", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.m_SH_16, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "m_SH_17", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_17", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.m_SH_17, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "m_SH_18", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_18", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.m_SH_18, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 					} else {
 						// !!! !!! !!!
-						LoadFromFile("dump/save", epoch, "m_SH_12", buf, sizeof(float) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_12", buf, sizeof(float) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.m_SH_12, buf, sizeof(float) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 				}
 			} else {
 				// !!! !!! !!!
-				LoadFromFile("dump/save", epoch, "m_SH_3", buf, sizeof(float) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "m_sh_3", buf, sizeof(float) * params_OptiX.numberOfGaussians);
 				error_CUDA = cudaMemcpy(params_OptiX.m_SH_3, buf, sizeof(float) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 				if (error_CUDA != cudaSuccess) goto Error;
 			}
@@ -593,19 +598,19 @@ bool InitializeOptiXOptimizer(
 
 		// *** *** *** *** ***
 
-		LoadFromFile("dump/save", epoch, "v1", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "v1", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 		error_CUDA = cudaMemcpy(params_OptiX.v11, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		LoadFromFile("dump/save", epoch, "v2", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "v2", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 		error_CUDA = cudaMemcpy(params_OptiX.v21, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		LoadFromFile("dump/save", epoch, "v3", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "v3", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 		error_CUDA = cudaMemcpy(params_OptiX.v31, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		LoadFromFile("dump/save", epoch, "v4", buf, sizeof(float2) * params_OptiX.numberOfGaussians);
+		LoadFromFile(dirPath, params_OptiX.epoch, "v4", buf, sizeof(float2) * params_OptiX.numberOfGaussians);
 		error_CUDA = cudaMemcpy(params_OptiX.v41, buf, sizeof(float2) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 		if (error_CUDA != cudaSuccess) goto Error;
 
@@ -613,90 +618,90 @@ bool InitializeOptiXOptimizer(
 
 		// Spherical harmonics
 		if constexpr (SH_degree >= 1) {
-			LoadFromFile("dump/save", epoch, "v_SH_1", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+			LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_1", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 			error_CUDA = cudaMemcpy(params_OptiX.v_SH_1, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			LoadFromFile("dump/save", epoch, "v_SH_2", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+			LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_2", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 			error_CUDA = cudaMemcpy(params_OptiX.v_SH_2, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 			if (error_CUDA != cudaSuccess) goto Error;
 
 			if constexpr (SH_degree >= 2) {
-				LoadFromFile("dump/save", epoch, "v_SH_3", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_3", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 				error_CUDA = cudaMemcpy(params_OptiX.v_SH_3, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				LoadFromFile("dump/save", epoch, "v_SH_4", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_4", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 				error_CUDA = cudaMemcpy(params_OptiX.v_SH_4, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				LoadFromFile("dump/save", epoch, "v_SH_5", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_5", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 				error_CUDA = cudaMemcpy(params_OptiX.v_SH_5, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				LoadFromFile("dump/save", epoch, "v_SH_6", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_6", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 				error_CUDA = cudaMemcpy(params_OptiX.v_SH_6, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 				if (error_CUDA != cudaSuccess) goto Error;
 
 				if constexpr (SH_degree >= 3) {
-					LoadFromFile("dump/save", epoch, "v_SH_7", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_7", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 					error_CUDA = cudaMemcpy(params_OptiX.v_SH_7, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					LoadFromFile("dump/save", epoch, "v_SH_8", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_8", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 					error_CUDA = cudaMemcpy(params_OptiX.v_SH_8, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					LoadFromFile("dump/save", epoch, "v_SH_9", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_9", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 					error_CUDA = cudaMemcpy(params_OptiX.v_SH_9, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					LoadFromFile("dump/save", epoch, "v_SH_10", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_10", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 					error_CUDA = cudaMemcpy(params_OptiX.v_SH_10, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					LoadFromFile("dump/save", epoch, "v_SH_11", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+					LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_11", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 					error_CUDA = cudaMemcpy(params_OptiX.v_SH_11, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 					if (error_CUDA != cudaSuccess) goto Error;
 
 					if constexpr (SH_degree >= 4) {
-						LoadFromFile("dump/save", epoch, "v_SH_12", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_12", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.v_SH_12, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "v_SH_13", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_13", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.v_SH_13, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "v_SH_14", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_14", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.v_SH_14, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "v_SH_15", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_15", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.v_SH_15, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "v_SH_16", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_16", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.v_SH_16, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "v_SH_17", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_17", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.v_SH_17, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						LoadFromFile("dump/save", epoch, "v_SH_18", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_18", buf, sizeof(float4) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.v_SH_18, buf, sizeof(float4) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 					} else {
 						// !!! !!! !!!
-						LoadFromFile("dump/save", epoch, "v_SH_12", buf, sizeof(float) * params_OptiX.numberOfGaussians);
+						LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_12", buf, sizeof(float) * params_OptiX.numberOfGaussians);
 						error_CUDA = cudaMemcpy(params_OptiX.v_SH_12, buf, sizeof(float) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 				}
 			} else {
 				// !!! !!! !!!
-				LoadFromFile("dump/save", epoch, "v_SH_3", buf, sizeof(float) * params_OptiX.numberOfGaussians);
+				LoadFromFile(dirPath, params_OptiX.epoch, "v_sh_3", buf, sizeof(float) * params_OptiX.numberOfGaussians);
 				error_CUDA = cudaMemcpy(params_OptiX.v_SH_3, buf, sizeof(float) * params_OptiX.numberOfGaussians, cudaMemcpyHostToDevice);
 				if (error_CUDA != cudaSuccess) goto Error;
 			}
@@ -704,11 +709,15 @@ bool InitializeOptiXOptimizer(
 
 		// *** *** *** *** ***
 
+		// !!! !!! !!!
+		LoadFromFile(dirPath, params_OptiX.epoch, "counter", buf, sizeof(unsigned) * 1);
+		error_CUDA = cudaMemcpy(params_OptiX.counter2, buf, sizeof(unsigned) * 1, cudaMemcpyHostToDevice);
+		if (error_CUDA != cudaSuccess) goto Error;
+
+		// *** *** *** *** ***
+
 		free(buf);
 	}
-
-	error_CUDA = cudaMemset(params_OptiX.counter2, 0, sizeof(unsigned) * 1);
-	if (error_CUDA != cudaSuccess) goto Error;
 
 	//**********************************************************************************************
 	//* SSIM                                                                                       *
@@ -1032,10 +1041,9 @@ Error:
 bool InitializeOptiXOptimizerSH0(
 	SRenderParams<0> &params,
 	SOptiXRenderParams<0> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath
 ) {
-	return InitializeOptiXOptimizer<0>(params, params_OptiX, loadFromFile, epoch);
+	return InitializeOptiXOptimizer<0>(params, params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
@@ -1043,10 +1051,9 @@ bool InitializeOptiXOptimizerSH0(
 bool InitializeOptiXOptimizerSH1(
 	SRenderParams<1> &params,
 	SOptiXRenderParams<1> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath
 ) {
-	return InitializeOptiXOptimizer<1>(params, params_OptiX, loadFromFile, epoch);
+	return InitializeOptiXOptimizer<1>(params, params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
@@ -1054,10 +1061,9 @@ bool InitializeOptiXOptimizerSH1(
 bool InitializeOptiXOptimizerSH2(
 	SRenderParams<2> &params,
 	SOptiXRenderParams<2> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath
 ) {
-	return InitializeOptiXOptimizer<2>(params, params_OptiX, loadFromFile, epoch);
+	return InitializeOptiXOptimizer<2>(params, params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
@@ -1065,10 +1071,9 @@ bool InitializeOptiXOptimizerSH2(
 bool InitializeOptiXOptimizerSH3(
 	SRenderParams<3> &params,
 	SOptiXRenderParams<3> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath
 ) {
-	return InitializeOptiXOptimizer<3>(params, params_OptiX, loadFromFile, epoch);
+	return InitializeOptiXOptimizer<3>(params, params_OptiX, dirPath);
 }
 
 // *************************************************************************************************
@@ -1076,8 +1081,7 @@ bool InitializeOptiXOptimizerSH3(
 bool InitializeOptiXOptimizerSH4(
 	SRenderParams<4> &params,
 	SOptiXRenderParams<4> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath
 ) {
-	return InitializeOptiXOptimizer<4>(params, params_OptiX, loadFromFile, epoch);
+	return InitializeOptiXOptimizer<4>(params, params_OptiX, dirPath);
 }

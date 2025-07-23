@@ -10,9 +10,29 @@ bool SetConfigurationOptiX(SOptiXRenderConfig& config_OptiX) {
 	cudaMemcpyToSymbol(bg_color_B, &bg_color_B, sizeof(float));
 	bg_color_B_host = config_OptiX.bg_color_B;
 
-	cudaMemcpyToSymbol(lr_RGB, &config_OptiX.lr_RGB, sizeof(float));
-	cudaMemcpyToSymbol(lr_RGB_exponential_decay_coefficient, &config_OptiX.lr_RGB_exponential_decay_coefficient, sizeof(float));
-	cudaMemcpyToSymbol(lr_RGB_final, &config_OptiX.lr_RGB_final, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH0, &config_OptiX.lr_SH0, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH0_exponential_decay_coefficient, &config_OptiX.lr_SH0_exponential_decay_coefficient, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH0_final, &config_OptiX.lr_SH0_final, sizeof(float));
+
+	cudaMemcpyToSymbol(SH1_activation_iter, &config_OptiX.SH1_activation_iter, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH1, &config_OptiX.lr_SH1, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH1_exponential_decay_coefficient, &config_OptiX.lr_SH1_exponential_decay_coefficient, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH1_final, &config_OptiX.lr_SH1_final, sizeof(float));
+
+	cudaMemcpyToSymbol(SH2_activation_iter, &config_OptiX.SH2_activation_iter, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH2, &config_OptiX.lr_SH2, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH2_exponential_decay_coefficient, &config_OptiX.lr_SH2_exponential_decay_coefficient, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH2_final, &config_OptiX.lr_SH2_final, sizeof(float));
+
+	cudaMemcpyToSymbol(SH3_activation_iter, &config_OptiX.SH3_activation_iter, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH3, &config_OptiX.lr_SH3, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH3_exponential_decay_coefficient, &config_OptiX.lr_SH3_exponential_decay_coefficient, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH3_final, &config_OptiX.lr_SH3_final, sizeof(float));
+
+	cudaMemcpyToSymbol(SH4_activation_iter, &config_OptiX.SH4_activation_iter, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH4, &config_OptiX.lr_SH4, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH4_exponential_decay_coefficient, &config_OptiX.lr_SH4_exponential_decay_coefficient, sizeof(float));
+	cudaMemcpyToSymbol(lr_SH4_final, &config_OptiX.lr_SH4_final, sizeof(float));
 
 	cudaMemcpyToSymbol(lr_alpha, &config_OptiX.lr_alpha, sizeof(float));
 	cudaMemcpyToSymbol(lr_alpha_exponential_decay_coefficient, &config_OptiX.lr_alpha_exponential_decay_coefficient, sizeof(float));

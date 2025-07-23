@@ -1,13 +1,7 @@
-// !!! !!! !!!
-#define MAX_RAY_LENGTH 1024 // 64
-//#define USE_DOUBLE_PRECISION
-#ifndef USE_DOUBLE_PRECISION
-	typedef float REAL;
-#else
-	typedef double REAL;
-#endif
-
 #define _USE_MATH_DEFINES
+
+// *** *** *** *** ***
+
 #include <intrin.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,37 +12,64 @@
 #include <CommCtrl.h>
 
 #include "Renderer.h"
-#include "RaySplats.h"
+#include "RaySplattingSH.h"
+
+// *** *** *** *** ***
 
 #define MAX_LOADSTRING 100
+
+// *** *** *** *** ***
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
+// *** *** *** *** ***
 
 HINSTANCE hInst;
 HWND hWnd;
 WCHAR szTitle[MAX_LOADSTRING];                 
 WCHAR szWindowClass[MAX_LOADSTRING];
 
-ATOM                MyRegisterClass(HINSTANCE hInstance);
+// *** *** *** *** ***
+
+ATOM MyRegisterClass(HINSTANCE hInstance);
 
 template<int SH_degree>
-BOOL                InitInstance(HINSTANCE, int);
+BOOL InitInstance(HINSTANCE, int);
 
 template<int SH_degree>
-LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
-INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+INT_PTR CALLBACK About(HWND, UINT, WPARAM, LPARAM);
+
+// *** *** *** *** ***
+
+#define TIMER1 0
+#define LABEL1 1
+
+// *** *** *** *** ***
+
+// !!! !!! !!!
+unsigned seed_dword_prev;
+// !!! !!! !!!
+
+// *** *** *** *** ***
+
+int next_available_dir_id;
+int next_available_screenshot_id;
+
+// *** *** *** *** ***
 
 LARGE_INTEGER lpFrequency;
 double training_time = 0.0f;
 
-//   -*-   -*-   -*-   -*-   -*-
+// *** *** *** *** ***
 
 int mouseX;
 int mouseY;
 bool cursorShown = true;
+bool customPose = true;
 bool cameraChanged;
 
 bool A_down = false;
@@ -59,21 +80,20 @@ bool C_down = false;
 bool Space_down = false;
 bool left_square_bracket_down = false;
 bool right_square_bracket_down = false;
+bool print_screen_down = false;
 
 bool flyMode = false;
-bool software = false;
 
 int XCnt = 0;
 int YCnt = 0;
 
-//   -*-   -*-   -*-   -*-   -*-
+// *** *** *** *** ***
 
+int bitmapSize;
+void *BMPFileHeader;
 int bitmapWidth = 400;
 int bitmapHeight = 400;
-const int THREADS_NUM = 24;
-
-#define TIMER1 0
-#define LABEL1 1
+int scanLineSize;
 
 wchar_t *text = NULL;
 wchar_t consoleBuffer[256];
@@ -92,18 +112,42 @@ float pitch = 0.0f;
 float double_tan_half_fov_x;
 float double_tan_half_fov_y;
 
-void *params; // !!! !!! !!!
+void *params;
 void *params_OptiX;
 
-// *************************************************************************************************
+// *** *** *** *** ***
 
-void Dump(const char* fName, void* ptr, int size) {
-	FILE *f;
-	
-	fopen_s(&f, fName, "wb");
-	fwrite(ptr, size, 1, f);
-	fclose(f);
-}
+int NUMBER_OF_POSES;
+int NUMBER_OF_POSES_TEST;
+
+SCamera *poses;
+SCamera *poses_test;
+
+int *bitmap_ref;
+int *bitmap_ref_test;
+
+char **img_names; // !!! !!! !!!
+char **img_names_test; // !!! !!! !!!
+
+int poseNum_rendering;
+int poseNum_training;
+int poseInd_training;
+int epochNum;
+
+int numberOfGaussians;
+
+void *GC; // !!! !!! !!!
+
+int *poses_indices;
+
+// *** *** *** *** ***
+
+SOptiXRenderConfig config;
+float ray_termination_T_threshold_training;
+
+// *** *** *** *** ***
+
+double FPS_inference = INFINITY;
 
 // *************************************************************************************************
 
@@ -138,7 +182,6 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 	fgets(buf, 256, f);
 	sscanf_s(buf, " \"camera_angle_x\": %f", &FOV);
 
-	int scanLineSize = 0;
 	while (fgets(buf, 256, f) != NULL) {
 		char *str = strstr(buf, "file_path");
 		if (str != NULL) {
@@ -159,9 +202,19 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 			fopen_s(&f_bitmap, filePath, "rb");
 
 			if (poseNum == 0) {
-				fseek(f_bitmap, 18, SEEK_SET);
-				fread(&bitmapWidth, 4, 1, f_bitmap);
-				fread(&bitmapHeight, 4, 1, f_bitmap);
+				fseek(f_bitmap, 0, SEEK_END);
+				bitmapSize = ftell(f_bitmap);
+				fseek(f_bitmap, 0, SEEK_SET);
+
+				BMPFileHeader = malloc(54);
+
+				fread(BMPFileHeader, 54, 1, f_bitmap);
+
+				int *ptr = ((int *)(((unsigned long long)BMPFileHeader) + 18)); // !!! !!! !!!
+
+				bitmapWidth = ptr[0]; // !!! !!! !!!
+				bitmapHeight = ptr[1]; // !!! !!! !!!
+
 				scanLineSize = (((bitmapWidth * 3) + 3) & -4);
 				bitmap = (int *)malloc(sizeof(int) * bitmapWidth * bitmapHeight * numberOfPoses);
 				bitmap_tmp = malloc(scanLineSize * bitmapHeight);
@@ -236,58 +289,29 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 	fclose(f);
 }
 
-//   -*-   -*-   -*-   -*-   -*-
-
-int NUMBER_OF_POSES;
-int NUMBER_OF_POSES_TEST;
-
-SCamera *poses;
-SCamera *poses_test;
-
-int *bitmap_ref;
-int *bitmap_ref_test;
-
-char **img_names; // !!! !!! !!!
-char **img_names_test; // !!! !!! !!!
-
-int NUMBER_OF_GAUSSIANS = 372590;
-int poseNum_rendering = 0;
-int poseNum_training = 0;
-int epochNum = 1;
-int epochNumStart;
-int phase = 1;
-SLBVHTreeNode root;
-
-int numberOfGaussians;
-
-void *GC; // !!! !!! !!!
-SLBVHTreeNode *tree;
-int *d;
-int D, H;
-
-int *poses_indices;
-
 // *************************************************************************************************
 
 void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	FILE *f;
 
-	fopen_s(&f, fName, "rt");
-
 	char buf[256];
 	char tmp[256];
 	int pos;
-	
-	// (0) Model learning phase
-	fgets(buf, 256, f);
-	pos = (strstr(buf, "<") - buf);
-	--pos;
-	while (buf[pos] == ' ') --pos;
-	config.learning_phase = (char *)malloc(sizeof(char) * (pos + 2));
-	strncpy_s(config.learning_phase, 256, buf, pos + 1);
-	config.learning_phase[pos + 1] = 0;
 
-	// (1) Data path
+	// *********************************************************************************************
+
+	fopen_s(&f, fName, "rt");
+
+	// *********************************************************************************************
+
+	// ESSENTIAL
+	fgets(buf, 256, f);
+	fgets(buf, 256, f);
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Data directory path
 	fgets(buf, 256, f);
 	pos = (strstr(buf, "<") - buf);
 	--pos;
@@ -296,7 +320,7 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	strncpy_s(config.data_path, 256, buf, pos + 1);
 	config.data_path[pos + 1] = 0;
 
-	// (2) Pretrained model path
+	// Pretrained 3DGS model path
 	fgets(buf, 256, f);
 	pos = (strstr(buf, "<") - buf);
 	--pos;
@@ -305,7 +329,7 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	strncpy_s(config.pretrained_model_path, 256, buf, pos + 1);
 	config.pretrained_model_path[pos + 1] = 0;
 
-	// (??) Data format
+	// Data format
 	fgets(buf, 256, f);
 	pos = (strstr(buf, "<") - buf);
 	--pos;
@@ -314,198 +338,493 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 	strncpy_s(config.data_format, 256, buf, pos + 1);
 	config.data_format[pos + 1] = 0;
 
-	// (3) Start epoch
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Start iteration
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%d", &config.start_epoch, 256);
 
-	// (4) End epoch
+	// End iteration
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%d", &config.end_epoch, 256);
 
-	// (??) Spherical harmonics degree
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Spherical harmonics degree
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%d", &config.SH_degree, 256);
 
-	// (??) Background color R component
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Background color R component
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.bg_color_R, 256);
 
-	// (??) Background color G component
+	// Background color G component
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.bg_color_G, 256);
 
-	// (??) Background color B component
+	// Background color B component
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.bg_color_B, 256);
 
 	// *********************************************************************************************
 
-	// (5) Learning rate for Gaussian RGB components
 	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.lr_RGB, 256);
-
-	// (6) Exponential decay coefficient for learning rate for Gaussian RGB components
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.lr_RGB_exponential_decay_coefficient, 256);
-
-	// (??) Final value of learning rate for Gaussian RGB components
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.lr_RGB_final, 256);
 
 	// *********************************************************************************************
-	   	  
-	// (7) Learning rate for Gaussian alpha component
+
+	// PERFORMANCE
+	fgets(buf, 256, f);
+	fgets(buf, 256, f);
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Chi-square squared radius for the Gaussian ellipsoid of confidence
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.chi_square_squared_radius, 256);
+
+	// Ray termination T threshold
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.ray_termination_T_threshold, 256);
+
+	// Ray termination T threshold for inference
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.ray_termination_T_threshold_inference, 256);
+
+	// Opacity threshold for Gauss removal
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.alpha_threshold_for_Gauss_removal, 256);
+
+	// Maximum number of Gaussians per ray
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.max_Gaussians_per_ray, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Densification frequency
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.densification_frequency, 256);
+
+	// Densification start iteration
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.densification_start_epoch, 256);
+
+	// Densification end iteration
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.densification_end_epoch, 256);
+
+	// Maximum number of Gaussians per model threshold
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.max_Gaussians_per_model, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// mu gradient norm threshold for densification
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.mu_grad_norm_threshold_for_densification, 256);
+
+	// s gradient norm threshold for Gaussian split streategy
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.s_norm_threshold_for_split_strategy, 256);
+
+	// Split ratio for Gaussian split strategy
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.split_ratio, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Minimum s norm threshold for Gauss removal
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.min_s_norm_threshold_for_Gauss_removal, 256);
+
+	// Minimum s coefficients clipping threshold
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.min_s_coefficients_clipping_threshold, 256);
+
+	// Maximum s norm threshold for Gauss removal
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.max_s_norm_threshold_for_Gauss_removal, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Lambda parameter for the cost function
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lambda, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// OUTPUT
+	fgets(buf, 256, f);
+	fgets(buf, 256, f);
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Model parameters saving frequency
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.saving_frequency, 256);
+
+	// Model parameters saving iteration modulo frequency
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.saving_iter, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// PLY file saving frequency
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.saving_frequency_PLY, 256);
+
+	// PLY file saving iteration modulo frequency
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.saving_iter_PLY, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Model evaluation on startup for train data set
+	fgets(buf, 256, f);
+	pos = (strstr(buf, "<") - buf);
+	--pos;
+	while (buf[pos] == ' ') --pos;
+	buf[pos + 1] = 0;
+	config.evaluation_on_startup_train = (strcmp(buf, "Yes") == 0);
+
+	// Model evaluation frequency for train data set
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.evaluation_frequency_train, 256);
+
+	// Model evaluation iteration for train data set modulo frequency
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.evaluation_iter_train, 256);
+
+	// Model evaluation on finish for train data set
+	fgets(buf, 256, f);
+	pos = (strstr(buf, "<") - buf);
+	--pos;
+	while (buf[pos] == ' ') --pos;
+	buf[pos + 1] = 0;
+	config.evaluation_on_finish_train = (strcmp(buf, "Yes") == 0);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Model evaluation on startup for test data set
+	fgets(buf, 256, f);
+	pos = (strstr(buf, "<") - buf);
+	--pos;
+	while (buf[pos] == ' ') --pos;
+	buf[pos + 1] = 0;
+	config.evaluation_on_startup_test = (strcmp(buf, "Yes") == 0);
+
+	// Model evaluation frequency for test data set
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.evaluation_frequency_test, 256);
+
+	// Model evaluation iteration for test data set modulo frequency
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.evaluation_iter_test, 256);
+
+	// Model evaluation on finish for test data set
+	fgets(buf, 256, f);
+	pos = (strstr(buf, "<") - buf);
+	--pos;
+	while (buf[pos] == ' ') --pos;
+	buf[pos + 1] = 0;
+	config.evaluation_on_finish_test = (strcmp(buf, "Yes") == 0);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Model visualization on startup for train data set
+	fgets(buf, 256, f);
+	pos = (strstr(buf, "<") - buf);
+	--pos;
+	while (buf[pos] == ' ') --pos;
+	buf[pos + 1] = 0;
+	config.visualization_on_startup_train = (strcmp(buf, "Yes") == 0);
+
+	// Model visualization frequency for train data set
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.visualization_frequency_train, 256);
+
+	// Model visualization iteration for train data set modulo frequency
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.visualization_iter_train, 256);
+
+	// Model visualization on finish for train data set
+	fgets(buf, 256, f);
+	pos = (strstr(buf, "<") - buf);
+	--pos;
+	while (buf[pos] == ' ') --pos;
+	buf[pos + 1] = 0;
+	config.visualization_on_finish_train = (strcmp(buf, "Yes") == 0);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Model visualization on startup for test data set
+	fgets(buf, 256, f);
+	pos = (strstr(buf, "<") - buf);
+	--pos;
+	while (buf[pos] == ' ') --pos;
+	buf[pos + 1] = 0;
+	config.visualization_on_startup_test = (strcmp(buf, "Yes") == 0);
+
+	// Model visualization frequency for test data set
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.visualization_frequency_test, 256);
+
+	// Model visualization iteration for test data set modulo frequency
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.visualization_iter_test, 256);
+
+	// Model visualization on finish for test data set
+	fgets(buf, 256, f);
+	pos = (strstr(buf, "<") - buf);
+	--pos;
+	while (buf[pos] == ' ') --pos;
+	buf[pos + 1] = 0;
+	config.visualization_on_finish_test = (strcmp(buf, "Yes") == 0);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+	
+	// LEARNING RATES
+	fgets(buf, 256, f);
+	fgets(buf, 256, f);
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Learning rate for Gaussian spherical harmonics of degree 0
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH0, 256);
+
+	// Exponential decay coefficient for learning rate for Gaussian Gaussian spherical harmonics of degree 0
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH0_exponential_decay_coefficient, 256);
+
+	// Final value of learning rate for Gaussian spherical harmonics of degree 0
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH0_final, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Spherical harmonics of degree 1 activation iteration
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.SH1_activation_iter, 256);
+
+	// Learning rate for Gaussian spherical harmonics of degree 1
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH1, 256);
+
+	// Exponential decay coefficient for learning rate for Gaussian Gaussian spherical harmonics of degree 1
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH1_exponential_decay_coefficient, 256);
+
+	// Final value of learning rate for Gaussian spherical harmonics of degree 1
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH1_final, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Spherical harmonics of degree 2 activation iteration
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.SH2_activation_iter, 256);
+
+	// Learning rate for Gaussian spherical harmonics of degree 2
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH2, 256);
+
+	// Exponential decay coefficient for learning rate for Gaussian Gaussian spherical harmonics of degree 2
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH2_exponential_decay_coefficient, 256);
+
+	// Final value of learning rate for Gaussian spherical harmonics of degree 2
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH2_final, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Spherical harmonics of degree 3 activation iteration
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.SH3_activation_iter, 256);
+
+	// Learning rate for Gaussian spherical harmonics of degree 3
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH3, 256);
+
+	// Exponential decay coefficient for learning rate for Gaussian Gaussian spherical harmonics of degree 3
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH3_exponential_decay_coefficient, 256);
+
+	// Final value of learning rate for Gaussian spherical harmonics of degree 3
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH3_final, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Spherical harmonics of degree 4 activation iteration
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%d", &config.SH4_activation_iter, 256);
+
+	// Learning rate for Gaussian spherical harmonics of degree 4
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH4, 256);
+
+	// Exponential decay coefficient for learning rate for Gaussian Gaussian spherical harmonics of degree 4
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH4_exponential_decay_coefficient, 256);
+
+	// Final value of learning rate for Gaussian spherical harmonics of degree 4
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%f", &config.lr_SH4_final, 256);
+
+	// *********************************************************************************************
+
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Learning rate for Gaussian opacities
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_alpha, 256);
 
-	// (8) Exponential decay coefficient for learning rate for Gaussian alpha component
+	// Exponential decay coefficient for learning rate for Gaussian opacities
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_alpha_exponential_decay_coefficient, 256);
 
-	// (??) Final value of learning rate for Gaussian alpha component
+	// Final value of learning rate for Gaussian opacities
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_alpha_final, 256);
 
 	// *********************************************************************************************
 
-	// (9) Learning rate for Gaussian means
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Learning rate for Gaussian means
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_m, 256);
 
-	// (10) Exponential decay coefficient for learning rate for Gaussian means
+	// Exponential decay coefficient for learning rate for Gaussian means
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_m_exponential_decay_coefficient, 256);
 
-	// (??) Final value of learning rate for Gaussian means
+	// Final value of learning rate for Gaussian means
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_m_final, 256);
 
 	// *********************************************************************************************
 
-	// (11) Learning rate for Gaussian scales
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Learning rate for Gaussian scales
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_s, 256);
 
-	// (12) Exponential decay coefficient for learning rate for Gaussian scales
+	// Exponential decay coefficient for learning rate for Gaussian scales
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_s_exponential_decay_coefficient, 256);
 
-	// (??) Final value of learning rate for Gaussian scales
+	// Final value of learning rate for Gaussian scales
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_s_final, 256);
 
 	// *********************************************************************************************
 
-	// (13) Learning rate for Gaussian quaternions
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Learning rate for Gaussian quaternions
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_q, 256);
 
-	// (14) Exponential decay coefficient for learning rate for Gaussian quaternions
+	// Exponential decay coefficient for learning rate for Gaussian quaternions
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_q_exponential_decay_coefficient, 256);
 
-	// (??) Final value of learning rate for Gaussian quaternions
+	// Final value of learning rate for Gaussian quaternions
 	fgets(buf, 256, f);
 	sscanf_s(buf, "%f", &config.lr_q_final, 256);
 
 	// *********************************************************************************************
 
-	// (15) Densification frequency
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%d", &config.densification_frequency, 256);
-
-	// (16) Densification start epoch
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%d", &config.densification_start_epoch, 256);
-
-	// (17) Densification end epoch
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%d", &config.densification_end_epoch, 256);
-
-	// (18) alpha threshold for Gauss removal
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.alpha_threshold_for_Gauss_removal, 256);
-
-	// (19) Minimum s coefficients clipping threshold
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.min_s_coefficients_clipping_threshold, 256);
-
-	// (20) Maximum s coefficients clipping threshold
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.max_s_coefficients_clipping_threshold, 256);
-
-	// (21) Minimum s norm threshold for Gauss removal
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.min_s_norm_threshold_for_Gauss_removal, 256);
-
-	// (22) Maximum s norm threshold for Gauss removal
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.max_s_norm_threshold_for_Gauss_removal, 256);
-
-	// (23) mu gradient norm threshold for densification>
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.mu_grad_norm_threshold_for_densification, 256);
-
-	// (24) s gradient norm threshold for Gaussian split streategy
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.s_norm_threshold_for_split_strategy, 256);
-
-	// (25) Split ratio for Gaussian split strategy
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.split_ratio, 256);
-
-	// (26) Lambda parameter for the cost function
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.lambda, 256);
-
-	// (27) Ray termination T threshold
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.ray_termination_T_threshold, 256);
-
-	// (28) Last significant Gauss alpha gradient precision
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.last_significant_Gauss_alpha_gradient_precision, 256);
-
-	// (??) Chi-square squared radius for the Gaussian ellipsoid of confidence
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%f", &config.chi_square_squared_radius, 256);
-
-	// (29) Maximum number of Gaussians per ray
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%d", &config.max_Gaussians_per_ray, 256);
-
-	// (30) Model parameters saving frequency
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%d", &config.saving_frequency, 256);
-
-	// (31) Model evaluation frequency
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%d", &config.evaluation_frequency, 256);
-
-	// (32) Model evaluation epoch
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%d", &config.evaluation_epoch, 256);
-
-	// (33) Maximum number of Gaussians per model threshold
-	fgets(buf, 256, f);
-	sscanf_s(buf, "%d", &config.max_Gaussians_per_model, 256);
-	
-	//wchar_t wbuf[256];
-	//mbstowcs_s(NULL, wbuf, 256, config.pretrained_model_path, 256);
-	//swprintf(consoleBuffer, 256, L"%s", wbuf);
-
-	//swprintf(consoleBuffer, 256, L"%d", config.start_epoch);
-	//WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer),NULL,NULL);
-
 	fclose(f);
 }
-
-//   -*-   -*-   -*-   -*-   -*-
-
-// !!! !!! !!!
-SOptiXRenderConfig config;
-// !!! !!! !!!
-float ray_termination_T_threshold_training;
 
 // *************************************************************************************************
 
@@ -562,7 +881,6 @@ void LoadSceneAndCameraCOLMAP(
 
 	void *bitmap_tmp = NULL;
 
-	int scanLineSize = 0;
 	tmp1 = buf;
 	for (int poseNum = 0; poseNum < numberOfPoses; ++poseNum) {
 		tmp2 = strstr(tmp1, "\"img_name\"");		
@@ -583,9 +901,19 @@ void LoadSceneAndCameraCOLMAP(
 		fopen_s(&f_bitmap, filePath, "rb");
 
 		if (poseNum == 0) {
-			fseek(f_bitmap, 18, SEEK_SET);
-			fread(&bitmapWidth, 4, 1, f_bitmap);
-			fread(&bitmapHeight, 4, 1, f_bitmap);
+			fseek(f_bitmap, 0, SEEK_END);
+			bitmapSize = ftell(f_bitmap);
+			fseek(f_bitmap, 0, SEEK_SET);
+
+			BMPFileHeader = malloc(54);
+
+			fread(BMPFileHeader, 54, 1, f_bitmap);
+
+			int *ptr = ((int *)(((unsigned long long)BMPFileHeader) + 18)); // !!! !!! !!!
+
+			bitmapWidth = ptr[0]; // !!! !!! !!!
+			bitmapHeight = ptr[1]; // !!! !!! !!!
+
 			scanLineSize = (((bitmapWidth * 3) + 3) & -4);
 			bitmap_train = (int *)malloc(sizeof(int) * bitmapWidth * bitmapHeight * numberOfPoses_train);
 			bitmap_test = (int *)malloc(sizeof(int) * bitmapWidth * bitmapHeight * numberOfPoses_test);
@@ -829,21 +1157,132 @@ void PrepareScene() {
 			double_tan_half_fov_x, double_tan_half_fov_y
 		); // !!! !!! !!!
 	else {
-		if (strcmp(config.learning_phase, "training") == 0) {
-			LoadSceneAndCamera(config.data_path, "transforms_train.json", NUMBER_OF_POSES, poses, bitmap_ref, img_names); // !!! !!! !!!
-			LoadSceneAndCamera(config.data_path, "transforms_test.json", NUMBER_OF_POSES_TEST, poses_test, bitmap_ref_test, img_names_test); // !!! !!! !!!
-		} else {
-			if (strcmp(config.learning_phase, "validation") == 0)
-				LoadSceneAndCamera(config.data_path, "transforms_val.json", NUMBER_OF_POSES, poses, bitmap_ref, img_names); // !!! !!! !!!
-			else
-				PostQuitMessage(0);
-		}
+		LoadSceneAndCamera(config.data_path, "transforms_train.json", NUMBER_OF_POSES, poses, bitmap_ref, img_names); // !!! !!! !!!
+		LoadSceneAndCamera(config.data_path, "transforms_test.json", NUMBER_OF_POSES_TEST, poses_test, bitmap_ref_test, img_names_test); // !!! !!! !!!
 	}
 
 	// *** *** ***
 	
-	// !!! !!! !!!
+	if (config.start_epoch == 0) {
+		HANDLE hFindFile;
+		WIN32_FIND_DATAA findFileData;
+
+		next_available_dir_id = 0; // !!! !!! !!!
+
+		hFindFile = FindFirstFileA("output\\*.*", &findFileData);
+		do {
+			if (
+				(strcmp(findFileData.cFileName, ".") != 0) &&
+				(strcmp(findFileData.cFileName, "..") != 0)
+			) {
+				int tmp;
+
+				sscanf_s(findFileData.cFileName, "%d", &tmp, 256);
+				if (tmp > next_available_dir_id)
+					next_available_dir_id = tmp;
+			}
+		} while (FindNextFileA(hFindFile, &findFileData) != 0);
+
+		++next_available_dir_id; // !!! !!! !!!
+		next_available_screenshot_id = 1; // !!! !!! !!!
+
+		// *** *** *** *** ***
+
+		wchar_t bufw[256];
+
+		swprintf(bufw, 256, L"output", next_available_dir_id);
+		CreateDirectory(bufw, NULL);
+
+		swprintf(bufw, 256, L"output\\%d", next_available_dir_id);
+		CreateDirectory(bufw, NULL);
+
+		swprintf(bufw, 256, L"output\\%d\\checkpoints", next_available_dir_id);
+		CreateDirectory(bufw, NULL);
+
+		swprintf(bufw, 256, L"output\\%d\\PLY files", next_available_dir_id);
+		CreateDirectory(bufw, NULL);
+
+		swprintf(bufw, 256, L"output\\%d\\renders", next_available_dir_id);
+		CreateDirectory(bufw, NULL);
+
+		swprintf(bufw, 256, L"output\\%d\\renders\\train", next_available_dir_id);
+		CreateDirectory(bufw, NULL);
+
+		swprintf(bufw, 256, L"output\\%d\\renders\\test", next_available_dir_id);
+		CreateDirectory(bufw, NULL);
+
+		swprintf(bufw, 256, L"output\\%d\\screenshots", next_available_dir_id);
+		CreateDirectory(bufw, NULL);
+
+		swprintf(bufw, 256, L"output\\%d\\stats", next_available_dir_id);
+		CreateDirectory(bufw, NULL);
+
+		// *** *** *** *** ***
+
+		// LOAD PRETRAINED MODEL FROM *.PLY FILE
+		FILE *f;
+
+		if      (config.SH_degree == 0) LoadPLYFile<0>(config.pretrained_model_path, (SGaussianComponent<0> **)&GC);
+		else if (config.SH_degree == 1) LoadPLYFile<1>(config.pretrained_model_path, (SGaussianComponent<1> **)&GC);
+		else if (config.SH_degree == 2) LoadPLYFile<2>(config.pretrained_model_path, (SGaussianComponent<2> **)&GC);
+		else if (config.SH_degree == 3) LoadPLYFile<3>(config.pretrained_model_path, (SGaussianComponent<3> **)&GC);
+		else if (config.SH_degree == 4) LoadPLYFile<4>(config.pretrained_model_path, (SGaussianComponent<4> **)&GC);
+	} else {
+		sscanf_s(config.pretrained_model_path, "%d", &next_available_dir_id, 256);
+
+		// *** *** *** *** ***
+
+		char fPath[256];
+
+		// *** *** *** *** ***
+
+		sprintf_s(fPath, "output\\%d\\screenshots\\*.*", next_available_dir_id);
+
+		// *** *** *** *** ***
+
+		HANDLE hFindFile;
+		WIN32_FIND_DATAA findFileData;
+
+		next_available_screenshot_id = 0; // !!! !!! !!!
+
+		hFindFile = FindFirstFileA(fPath, &findFileData);
+		do {
+			if (
+				(strcmp(findFileData.cFileName, ".") != 0) &&
+				(strcmp(findFileData.cFileName, "..") != 0)
+			) {
+				int tmp;
+
+				sscanf_s(findFileData.cFileName, "%d", &tmp, 256);
+				if (tmp > next_available_screenshot_id)
+					next_available_screenshot_id = tmp;
+			}
+		} while (FindNextFileA(hFindFile, &findFileData) != 0);
+
+		++next_available_screenshot_id; // !!! !!! !!!
+
+		// *** *** *** *** ***
+
+		// !!! !!! !!!
+		// Load the seed state before computing the training poses indices permutation
+		FILE *f;
+
+		sprintf_s(fPath, "output\\%d\\checkpoints\\%d\\seed_iter_%d.checkpoint", next_available_dir_id, config.start_epoch, config.start_epoch);
+		
+		fopen_s(&f, fPath, "rb");
+		fread(&seed_dword, sizeof(unsigned) * 1, 1, f);
+		fclose(f);
+		// !!! !!! !!!
+	}
+
+	// *** *** *** *** ***
+
 	poses_indices = (int *)malloc(sizeof(int) * NUMBER_OF_POSES);
+
+	// !!! !!! !!!
+	seed_dword_prev = seed_dword;
+	// !!! !!! !!!
+
 	for (int i = 0; i < NUMBER_OF_POSES; i++) poses_indices[i] = i;
 	for (int i = 0; i < NUMBER_OF_POSES - 1; i++) {
 		int index = i + (RandomInteger() % (NUMBER_OF_POSES - i));
@@ -854,41 +1293,21 @@ void PrepareScene() {
 		}
 	}
 
-	/*for (int i = 0; i < NUMBER_OF_POSES; i++) {
-	swprintf(consoleBuffer, 256, L"%d\n", poses_indices[i]);
-	WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer),NULL,NULL);
-	}*/
+	// !!! !!! !!!
+	poseNum_training = config.start_epoch % NUMBER_OF_POSES;
 	// !!! !!! !!!
 
-#ifdef DUMP
-	Dump("dump\\poses.dump", poses, sizeof(SCamera) * NUMBER_OF_POSES);
-#endif
+	poseInd_training = poses_indices[poseNum_training]; // !!! !!! !!!
 
 	// *** *** *** *** ***
 
-	// LOAD FROM *.PLY
-	// !!! !!! !!!
-	if (config.start_epoch == 0) {
-		FILE *f;
-
-		if      (config.SH_degree == 0) LoadPLYFile<0>(config.pretrained_model_path, (SGaussianComponent<0> **)&GC);
-		else if (config.SH_degree == 1) LoadPLYFile<1>(config.pretrained_model_path, (SGaussianComponent<1> **)&GC);
-		else if (config.SH_degree == 2) LoadPLYFile<2>(config.pretrained_model_path, (SGaussianComponent<2> **)&GC);
-		else if (config.SH_degree == 3) LoadPLYFile<3>(config.pretrained_model_path, (SGaussianComponent<3> **)&GC);
-		else if (config.SH_degree == 4) LoadPLYFile<4>(config.pretrained_model_path, (SGaussianComponent<4> **)&GC);
-	}
-
-	// *** *** *** *** ***
-
-	poseNum_rendering = 76;
+	poseNum_rendering = 0;
 
 	Ox = poses[poseNum_rendering].Ox; Oy = poses[poseNum_rendering].Oy; Oz = poses[poseNum_rendering].Oz;
 	Rx = poses[poseNum_rendering].Rx; Ry = poses[poseNum_rendering].Ry; Rz = poses[poseNum_rendering].Rz;
 	Dx = poses[poseNum_rendering].Dx; Dy = poses[poseNum_rendering].Dy; Dz = poses[poseNum_rendering].Dz;
 	Fx = poses[poseNum_rendering].Fx; Fy = poses[poseNum_rendering].Fy; Fz = poses[poseNum_rendering].Fz;
 	
-	poseNum_training = 0;
-	phase = 2;
 	cameraChanged = true;
 }
 
@@ -903,6 +1322,8 @@ int APIENTRY wWinMain(
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
 
+	// *** *** *** *** ***
+
 	AllocConsole();
 
 	text = (wchar_t *)malloc(sizeof(wchar_t) * 256);
@@ -916,6 +1337,8 @@ int APIENTRY wWinMain(
     LoadStringW(hInstance, IDC_RAYSPLATS, szWindowClass, MAX_LOADSTRING);
     MyRegisterClass(hInstance);
 
+	// *** *** *** *** ***
+
 	BOOL result;
 
 	if      (config.SH_degree == 0) result = InitInstance<0>(hInstance, nCmdShow);
@@ -927,6 +1350,14 @@ int APIENTRY wWinMain(
     if (!result) {
         return FALSE;
     }
+
+	// *** *** *** *** ***
+
+	// !!! !!! !!!
+	RegisterHotKey(hWnd, VK_SNAPSHOT, MOD_NOREPEAT, VK_SNAPSHOT);
+	// !!! !!! !!!
+
+	// *** *** *** *** ***
 
     HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_RAYSPLATS));
     MSG msg;
@@ -948,7 +1379,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance) {
 
     wcex.cbSize = sizeof(WNDCLASSEX);
 
-    wcex.style          = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
+    wcex.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
 
 	if      (config.SH_degree == 0) wcex.lpfnWndProc = WndProc<0>;
 	else if (config.SH_degree == 1) wcex.lpfnWndProc = WndProc<1>;
@@ -1020,11 +1451,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 	// *** *** *** *** ***
 
 	// !!! !!! !!!
-	NUMBER_OF_GAUSSIANS = numberOfGaussians;
-	// !!! !!! !!!
-
-	// !!! !!! !!!
-	params = malloc(sizeof(SRenderParams<SH_degree>) * THREADS_NUM);
+	params = malloc(sizeof(SRenderParams<SH_degree>) * 1);
 	SRenderParams<SH_degree> *params = (SRenderParams<SH_degree> *)::params;
 	// !!! !!! !!!
 
@@ -1033,62 +1460,36 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 	SOptiXRenderParams<SH_degree> *params_OptiX = (SOptiXRenderParams<SH_degree> *)::params_OptiX;
 	// !!! !!! !!!
 
-	for (int i = 0; i < THREADS_NUM; ++i) {
-		params[i].Ox = Ox; params[i].Oy = Oy; params[i].Oz = Oz;
-		params[i].Rx = Rx; params[i].Ry = Ry; params[i].Rz = Rz;
-		params[i].Dx = Dx; params[i].Dy = Dy; params[i].Dz = Dz;
-		params[i].Fx = Fx; params[i].Fy = Fy; params[i].Fz = Fz;
+	for (int i = 0; i < 1; ++i) {
 		// !!! !!! !!!
 		params[i].double_tan_half_fov_x = double_tan_half_fov_x;
 		params[i].double_tan_half_fov_y = double_tan_half_fov_y;
 		// !!! !!! !!!
+		
 		params[i].bitmap = bitmap;
 		params[i].w = bitmapWidth; params[i].h = bitmapHeight;
-		params[i].tree = tree;
 		params[i].GC = (SGaussianComponent<SH_degree> *)GC;
-		params[i].numberOfGaussians = NUMBER_OF_GAUSSIANS;
-		params[i].d = d;
-		params[i].D = D;
-		params[i].H = H;
-		params[i].threadsNum = THREADS_NUM;
-		params[i].threadId = i;
+		params[i].numberOfGaussians = numberOfGaussians;
+
+		params[0].bitmap_ref = (unsigned *)bitmap_ref; // !!! !!! !!!
+		params[0].NUMBER_OF_POSES = NUMBER_OF_POSES; // !!! !!! !!!
 	}
 	// !!! !!! !!!
 
-	// !!! !!! !!!
+	//**********************************************************************************************
 
-bool result;
-
-#ifdef CUDA_RENDERER
-	result = InitializeCUDARenderer(params[0], dev_params);
-	result = InitializeCUDARendererAS(params[0], dev_params);
-	swprintf(consoleBuffer, 256, L"Initialize CUDA Renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-	WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-#endif
-
-	params[0].poses = poses; // !!! !!! !!!
-	params[0].bitmap_ref = (unsigned *)bitmap_ref; // !!! !!! !!!
-	params[0].NUMBER_OF_POSES = NUMBER_OF_POSES; // !!! !!! !!!
-
-#ifdef CUDA_RENDERER
-	result = InitializeCUDAGradient(params[0], dev_params);
-	swprintf(consoleBuffer, 256, L"Initialize CUDA Gradient: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-	WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-#endif
+	bool result;
 
 	//**********************************************************************************************
 
-//#define VISUALIZATION
-//#define TEST_POSES_VISUALIZATION
-
-#ifndef CUDA_RENDERER
-	
-	
 	SetConfigurationOptiX(config);
 	// !!! !!! !!!
 	if (config.start_epoch == 0) {
 		// LOAD FROM PRETRAINED MODEL
-		epochNum = 1;
+		epochNum = 0;
+		params_OptiX->epoch = epochNum; // !!! !!! !!!
+
+		// *** *** *** *** ***
 
 		if      constexpr (SH_degree == 0) result = InitializeOptiXRendererSH0(params[0], *params_OptiX);
 		else if constexpr (SH_degree == 1) result = InitializeOptiXRendererSH1(params[0], *params_OptiX);
@@ -1097,14 +1498,6 @@ bool result;
 		else if constexpr (SH_degree == 4) result = InitializeOptiXRendererSH4(params[0], *params_OptiX);
 		
 		swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-		float scene_extent;
-		GetSceneExtentOptiX(scene_extent);
-		swprintf(consoleBuffer, 256, L"INITIAL SCENE EXTENT: %f;\n", scene_extent);
-		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-		swprintf(consoleBuffer, 256, L"%d\n", params_OptiX->width);
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
 		if      constexpr (SH_degree == 0) result = InitializeOptiXOptimizerSH0(params[0], *params_OptiX);
@@ -1116,114 +1509,49 @@ bool result;
 		swprintf(consoleBuffer, 256, L"Initializing OptiX optimizer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-		epochNumStart = epochNum;		
-	} else {
-		epochNum = config.start_epoch;
+		float scene_extent;
+		result = GetSceneExtentOptiX(scene_extent);
 
-		if      constexpr (SH_degree == 0) result = InitializeOptiXRendererSH0(params[0], *params_OptiX, true, epochNum);
-		else if constexpr (SH_degree == 1) result = InitializeOptiXRendererSH1(params[0], *params_OptiX, true, epochNum);
-		else if constexpr (SH_degree == 2) result = InitializeOptiXRendererSH2(params[0], *params_OptiX, true, epochNum);
-		else if constexpr (SH_degree == 3) result = InitializeOptiXRendererSH3(params[0], *params_OptiX, true, epochNum);
-		else if constexpr (SH_degree == 4) result = InitializeOptiXRendererSH4(params[0], *params_OptiX, true, epochNum);
+		swprintf(consoleBuffer, 256, L"GetSceneExtentOptiX: %s (%f)\n", (result ? L"OK... ." : L"Failed... ."), scene_extent);
+		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+	} else {
+		epochNum = config.start_epoch; // !!! !!! !!!
+		params_OptiX->epoch = epochNum; // !!! !!! !!!
+
+		// *** *** *** *** ***
+
+		char buf[256];
+
+		// *** *** *** *** ***
+		
+		sprintf_s(buf, "output\\%d\\checkpoints\\%d", next_available_dir_id, config.start_epoch);
+
+		// *** *** *** *** ***
+
+		// LOAD FROM CHECKPOINT
+		if      constexpr (SH_degree == 0) result = InitializeOptiXRendererSH0(params[0], *params_OptiX, buf);
+		else if constexpr (SH_degree == 1) result = InitializeOptiXRendererSH1(params[0], *params_OptiX, buf);
+		else if constexpr (SH_degree == 2) result = InitializeOptiXRendererSH2(params[0], *params_OptiX, buf);
+		else if constexpr (SH_degree == 3) result = InitializeOptiXRendererSH3(params[0], *params_OptiX, buf);
+		else if constexpr (SH_degree == 4) result = InitializeOptiXRendererSH4(params[0], *params_OptiX, buf);
 
 		swprintf(consoleBuffer, 256, L"Initializing OptiX renderer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
 
-		if      constexpr (SH_degree == 0) result = InitializeOptiXOptimizerSH0(params[0], *params_OptiX, true, epochNum);
-		else if constexpr (SH_degree == 1) result = InitializeOptiXOptimizerSH1(params[0], *params_OptiX, true, epochNum);
-		else if constexpr (SH_degree == 2) result = InitializeOptiXOptimizerSH2(params[0], *params_OptiX, true, epochNum);
-		else if constexpr (SH_degree == 3) result = InitializeOptiXOptimizerSH3(params[0], *params_OptiX, true, epochNum);
-		else if constexpr (SH_degree == 4) result = InitializeOptiXOptimizerSH4(params[0], *params_OptiX, true, epochNum);
+		if      constexpr (SH_degree == 0) result = InitializeOptiXOptimizerSH0(params[0], *params_OptiX, buf);
+		else if constexpr (SH_degree == 1) result = InitializeOptiXOptimizerSH1(params[0], *params_OptiX, buf);
+		else if constexpr (SH_degree == 2) result = InitializeOptiXOptimizerSH2(params[0], *params_OptiX, buf);
+		else if constexpr (SH_degree == 3) result = InitializeOptiXOptimizerSH3(params[0], *params_OptiX, buf);
+		else if constexpr (SH_degree == 4) result = InitializeOptiXOptimizerSH4(params[0], *params_OptiX, buf);
 
-		swprintf(consoleBuffer, 256, L"Initializing OptiX optimizer: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+		float scene_extent;
+		result = GetSceneExtentOptiX(scene_extent);
+
+		swprintf(consoleBuffer, 256, L"GetSceneExtentOptiX: %s (%f)\n", (result ? L"OK... ." : L"Failed... ."), scene_extent);
 		WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-		++epochNum;
-		epochNumStart = epochNum;
 	}
 
-	// *****************************************************************************************
-
-	// Test poses visualization on startup
-	#if ((defined TEST_POSES_VISUALIZATION) && (!defined VISUALIZATION))
-		if ((strcmp(config.data_format, "colmap") == 0) || (strcmp(config.learning_phase, "validation") != 0)) {
-			char filePath[256];
-
-			if (strcmp(config.data_format, "colmap") != 0) {
-				strcpy_s(filePath, config.data_path);
-				strcat_s(filePath, "/");
-				strcat_s(filePath, img_names_test[0]);
-				strcat_s(filePath, ".bmp");
-			} else {
-				strcpy_s(filePath, config.data_path);
-				strcat_s(filePath, "/images/");
-				strcat_s(filePath, img_names_test[0]);
-				strcat_s(filePath, ".bmp");
-			}
-					   			
-			FILE *f;
-			
-			fopen_s(&f, filePath, "rb+");
-			fseek(f, 0, SEEK_END);
-			int bitmapSize = ftell(f);
-			int scanLineSize = (bitmapSize - 54) / bitmapHeight;
-
-			fseek(f, 0, SEEK_SET);
-			char *bitmap = (char *)malloc(sizeof(char) * bitmapSize);
-			fread(bitmap, bitmapSize, 1, f);
-			fclose(f);
-
-			// *** *** *** *** ***
-
-			for (int pose = 0; pose < NUMBER_OF_POSES_TEST; ++pose) {
-				params_OptiX.O.x = poses_test[pose].Ox; params_OptiX.O.y = poses_test[pose].Oy; params_OptiX.O.z = poses_test[pose].Oz;
-				params_OptiX.R.x = poses_test[pose].Rx; params_OptiX.R.y = poses_test[pose].Ry; params_OptiX.R.z = poses_test[pose].Rz;
-				params_OptiX.D.x = poses_test[pose].Dx; params_OptiX.D.y = poses_test[pose].Dy; params_OptiX.D.z = poses_test[pose].Dz;
-				params_OptiX.F.x = poses_test[pose].Fx; params_OptiX.F.y = poses_test[pose].Fy; params_OptiX.F.z = poses_test[pose].Fz;
-				params_OptiX.copyBitmapToHostMemory = true;
-
-				result = RenderOptiX(params_OptiX);
-
-				// *** *** *** *** ***
-
-				for (int i = 0; i < bitmapHeight; ++i) {
-					for (int j = 0; j < bitmapWidth; ++j) {
-						unsigned color = params_OptiX.bitmap_host[(i * bitmapWidth) + j];
-						unsigned char R = color >> 16;
-						unsigned char G = (color >> 8) & 255;
-						unsigned char B = color & 255;
-						bitmap[54 + (((bitmapHeight - 1 - i) * scanLineSize) + (j * 3))] = B;
-						bitmap[54 + (((bitmapHeight - 1 - i) * scanLineSize) + (j * 3)) + 1] = G;
-						bitmap[54 + (((bitmapHeight - 1 - i) * scanLineSize) + (j * 3)) + 2] = R;
-					}
-				}
-
-				if (strcmp(config.data_format, "colmap") != 0) {
-					strcpy_s(filePath, config.data_path);
-					strcat_s(filePath, "/");
-					strcat_s(filePath, img_names_test[pose]);
-					strcat_s(filePath, "_render.bmp");
-				} else {
-					strcpy_s(filePath, config.data_path);
-					strcat_s(filePath, "/images/");
-					strcat_s(filePath, img_names_test[pose]);
-					strcat_s(filePath, "_render.bmp");
-				}
-
-				fopen_s(&f, filePath, "wb+");
-				fwrite(bitmap, bitmapSize, 1, f);
-				fclose(f);
-
-				swprintf(consoleBuffer, 256, L"TEST POSE: %d;\n", pose + 1);
-				WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-			}
-
-			free(bitmap);
-		}
-	#endif
-#endif
-
-	//**********************************************************************************************
+	// *********************************************************************************************
 
 	QueryPerformanceFrequency(&lpFrequency);
 
@@ -1231,7 +1559,7 @@ bool result;
 
 	char buffer[256];
 
-	sprintf_s(buffer, "GaussianRandering - Pose: %d / %d", poseNum_rendering + 1, NUMBER_OF_POSES);
+	sprintf_s(buffer, "RaySplats - Pose: %d / %d", poseNum_rendering + 1, NUMBER_OF_POSES);
 	SetWindowTextA(hWnd, buffer);
 
 	ShowWindow(hWnd, nCmdShow);
@@ -1301,14 +1629,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 			break;
 		}
 		case WM_MOUSEMOVE : {
-			if ((phase == 2) && (flyMode)) {
+			if (flyMode) {
 				mouseX = GET_X_LPARAM(lParam); 
 				mouseY = GET_Y_LPARAM(lParam);
 				int dX = mouseX - (bitmapWidth / 2);
 				int dY = mouseY - 40 - (bitmapHeight / 2);
 				if ((dX != 0) || (dY != 0)) {
 					char buffer[256];
-					sprintf_s(buffer, "GaussianRandering - Custom pose");
+					if (!isfinite(FPS_inference))
+						sprintf_s(buffer, "RaySplats - Custom pose");
+					else
+						sprintf_s(buffer, "RaySplats - Custom pose (FPS: %.4lf)", FPS_inference);
 					SetWindowTextA(hWnd, buffer);
 
 					float Rx_; float Ry_; float Rz_;
@@ -1348,13 +1679,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 					ClientToScreen(hWnd, (POINT *)&cr.right);
 					SetCursorPos(cr.left + (bitmapWidth / 2), cr.top + 40 + (bitmapHeight / 2));
 
+					customPose = true;
 					cameraChanged = true;
 				}
 			}
-			break;
-		}
-		case WM_RBUTTONDBLCLK : {
-			software = !software;
 			break;
 		}
 		case WM_LBUTTONDBLCLK : {
@@ -1396,571 +1724,924 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 			}			
 			break;
 		}
+		case WM_HOTKEY : {
+			// !!! !!! !!!
+			switch (wParam)	{
+				case VK_SNAPSHOT : {
+					print_screen_down = true;
+					cameraChanged = true;
+					break;
+				}
+			}
+			break;
+			// !!! !!! !!!
+		}
 		case WM_TIMER : {
 			switch (wParam) {
 				case TIMER1 : {
-					if (phase == 2) {
-						if (left_square_bracket_down && (poseNum_rendering > 0)) {
-							--poseNum_rendering;
+					if (left_square_bracket_down && (poseNum_rendering > 0)) {
+						--poseNum_rendering;
 
+						char buffer[256];
+						if (!isfinite(FPS_inference))
+							sprintf_s(buffer, "RaySplats - Pose: %d / %d", poseNum_rendering + 1, NUMBER_OF_POSES);
+						else
+							sprintf_s(buffer, "RaySplats - Pose: %d / %d (FPS: %.4lf)", poseNum_rendering + 1, NUMBER_OF_POSES, FPS_inference);
+						SetWindowTextA(hWnd, buffer);
+
+						Ox = poses[poseNum_rendering].Ox; Oy = poses[poseNum_rendering].Oy; Oz = poses[poseNum_rendering].Oz;
+						Rx = poses[poseNum_rendering].Rx; Ry = poses[poseNum_rendering].Ry; Rz = poses[poseNum_rendering].Rz;
+						Dx = poses[poseNum_rendering].Dx; Dy = poses[poseNum_rendering].Dy; Dz = poses[poseNum_rendering].Dz;
+						Fx = poses[poseNum_rendering].Fx; Fy = poses[poseNum_rendering].Fy; Fz = poses[poseNum_rendering].Fz;
+
+						customPose = false;
+						cameraChanged = true;
+					}
+
+					if (right_square_bracket_down && (poseNum_rendering < NUMBER_OF_POSES - 1)) {
+						++poseNum_rendering;
+
+						char buffer[256];
+						if (!isfinite(FPS_inference))
+							sprintf_s(buffer, "RaySplats - Pose: %d / %d", poseNum_rendering + 1, NUMBER_OF_POSES);
+						else
+							sprintf_s(buffer, "RaySplats - Pose: %d / %d (FPS: %.4lf)", poseNum_rendering + 1, NUMBER_OF_POSES, FPS_inference);
+						SetWindowTextA(hWnd, buffer);
+
+						Ox = poses[poseNum_rendering].Ox; Oy = poses[poseNum_rendering].Oy; Oz = poses[poseNum_rendering].Oz;
+						Rx = poses[poseNum_rendering].Rx; Ry = poses[poseNum_rendering].Ry; Rz = poses[poseNum_rendering].Rz;
+						Dx = poses[poseNum_rendering].Dx; Dy = poses[poseNum_rendering].Dy; Dz = poses[poseNum_rendering].Dz;
+						Fx = poses[poseNum_rendering].Fx; Fy = poses[poseNum_rendering].Fy; Fz = poses[poseNum_rendering].Fz;
+
+						customPose = false;
+						cameraChanged = true;
+					}
+
+					if (flyMode) {
+						if (D_down) {
 							char buffer[256];
-							sprintf_s(buffer, "GaussianRandering - Pose: %d / %d", poseNum_rendering + 1, NUMBER_OF_POSES);
+							if (!isfinite(FPS_inference))
+								sprintf_s(buffer, "RaySplats - Custom pose");
+							else
+								sprintf_s(buffer, "RaySplats - Custom pose (FPS: %.4lf)", FPS_inference);
 							SetWindowTextA(hWnd, buffer);
 
-							Ox = poses[poseNum_rendering].Ox; Oy = poses[poseNum_rendering].Oy; Oz = poses[poseNum_rendering].Oz;
-							Rx = poses[poseNum_rendering].Rx; Ry = poses[poseNum_rendering].Ry; Rz = poses[poseNum_rendering].Rz;
-							Dx = poses[poseNum_rendering].Dx; Dy = poses[poseNum_rendering].Dy; Dz = poses[poseNum_rendering].Dz;
-							Fx = poses[poseNum_rendering].Fx; Fy = poses[poseNum_rendering].Fy; Fz = poses[poseNum_rendering].Fz;
+							Ox = Ox + (Rx * 0.1f);
+							Oy = Oy + (Ry * 0.1f);
+							Oz = Oz + (Rz * 0.1f);
 
+							customPose = true;
 							cameraChanged = true;
 						}
-
-						if (right_square_bracket_down && (poseNum_rendering < NUMBER_OF_POSES - 1)) {
-							++poseNum_rendering;
-
+						if (A_down) {
 							char buffer[256];
-							sprintf_s(buffer, "GaussianRandering - Pose: %d / %d", poseNum_rendering + 1, NUMBER_OF_POSES);
+							if (!isfinite(FPS_inference))
+								sprintf_s(buffer, "RaySplats - Custom pose");
+							else
+								sprintf_s(buffer, "RaySplats - Custom pose (FPS: %.4lf)", FPS_inference);
 							SetWindowTextA(hWnd, buffer);
 
-							Ox = poses[poseNum_rendering].Ox; Oy = poses[poseNum_rendering].Oy; Oz = poses[poseNum_rendering].Oz;
-							Rx = poses[poseNum_rendering].Rx; Ry = poses[poseNum_rendering].Ry; Rz = poses[poseNum_rendering].Rz;
-							Dx = poses[poseNum_rendering].Dx; Dy = poses[poseNum_rendering].Dy; Dz = poses[poseNum_rendering].Dz;
-							Fx = poses[poseNum_rendering].Fx; Fy = poses[poseNum_rendering].Fy; Fz = poses[poseNum_rendering].Fz;
+							Ox = Ox - (Rx * 0.1f);
+							Oy = Oy - (Ry * 0.1f);
+							Oz = Oz - (Rz * 0.1f);
 
+							customPose = true;
+							cameraChanged = true;
+
+						}
+						if (W_down) {
+							char buffer[256];
+							if (!isfinite(FPS_inference))
+								sprintf_s(buffer, "RaySplats - Custom pose");
+							else
+								sprintf_s(buffer, "RaySplats - Custom pose (FPS: %.4lf)", FPS_inference);
+							SetWindowTextA(hWnd, buffer);
+
+							Ox = Ox + (Fx * 0.1f);
+							Oy = Oy + (Fy * 0.1f);
+							Oz = Oz + (Fz * 0.1f);
+
+							customPose = true;
 							cameraChanged = true;
 						}
+						if (S_down) {
+							char buffer[256];
+							if (!isfinite(FPS_inference))
+								sprintf_s(buffer, "RaySplats - Custom pose");
+							else
+								sprintf_s(buffer, "RaySplats - Custom pose (FPS: %.4lf)", FPS_inference);
+							SetWindowTextA(hWnd, buffer);
 
-						if (flyMode) {
-							if (D_down) {
-								char buffer[256];
-								sprintf_s(buffer, "GaussianRandering - Custom pose");
-								SetWindowTextA(hWnd, buffer);
+							Ox = Ox - (Fx * 0.1f);
+							Oy = Oy - (Fy * 0.1f);
+							Oz = Oz - (Fz * 0.1f);
 
-								Ox = Ox + (Rx * 0.1f);
-								Oy = Oy + (Ry * 0.1f);
-								Oz = Oz + (Rz * 0.1f);
-								cameraChanged = true;
-							}
-							if (A_down) {
-								char buffer[256];
-								sprintf_s(buffer, "GaussianRandering - Custom pose");
-								SetWindowTextA(hWnd, buffer);
+							customPose = true;
+							cameraChanged = true;
+						}
+						if (C_down) {
+							char buffer[256];
+							if (!isfinite(FPS_inference))
+								sprintf_s(buffer, "RaySplats - Custom pose");
+							else
+								sprintf_s(buffer, "RaySplats - Custom pose (FPS: %.4lf)", FPS_inference);
+							SetWindowTextA(hWnd, buffer);
 
-								Ox = Ox - (Rx * 0.1f);
-								Oy = Oy - (Ry * 0.1f);
-								Oz = Oz - (Rz * 0.1f);
-								cameraChanged = true;
+							Ox = Ox + (Dx * 0.1f);
+							Oy = Oy + (Dy * 0.1f);
+							Oz = Oz + (Dz * 0.1f);
 
-							}
-							if (W_down) {
-								char buffer[256];
-								sprintf_s(buffer, "GaussianRandering - Custom pose");
-								SetWindowTextA(hWnd, buffer);
+							customPose = true;
+							cameraChanged = true;
+						}
+						if (Space_down) {
+							char buffer[256];
+							if (!isfinite(FPS_inference))
+								sprintf_s(buffer, "RaySplats - Custom pose");
+							else
+								sprintf_s(buffer, "RaySplats - Custom pose (FPS: %.4lf)", FPS_inference);
+							SetWindowTextA(hWnd, buffer);
 
-								Ox = Ox + (Fx * 0.1f);
-								Oy = Oy + (Fy * 0.1f);
-								Oz = Oz + (Fz * 0.1f);
-								cameraChanged = true;
-							}
-							if (S_down) {
-								char buffer[256];
-								sprintf_s(buffer, "GaussianRandering - Custom pose");
-								SetWindowTextA(hWnd, buffer);
+							Ox = Ox - (Dx * 0.1f);
+							Oy = Oy - (Dy * 0.1f);
+							Oz = Oz - (Dz * 0.1f);
 
-								Ox = Ox - (Fx * 0.1f);
-								Oy = Oy - (Fy * 0.1f);
-								Oz = Oz - (Fz * 0.1f);
-								cameraChanged = true;
-							}
-							if (C_down) {
-								char buffer[256];
-								sprintf_s(buffer, "GaussianRandering - Custom pose");
-								SetWindowTextA(hWnd, buffer);
-
-								Ox = Ox + (Dx * 0.1f);
-								Oy = Oy + (Dy * 0.1f);
-								Oz = Oz + (Dz * 0.1f);
-								cameraChanged = true;
-							}
-							if (Space_down) {
-								char buffer[256];
-								sprintf_s(buffer, "GaussianRandering - Custom pose");
-								SetWindowTextA(hWnd, buffer);
-
-								Ox = Ox - (Dx * 0.1f);
-								Oy = Oy - (Dy * 0.1f);
-								Oz = Oz - (Dz * 0.1f);
-								cameraChanged = true;
-							}
+							customPose = true;
+							cameraChanged = true;
 						}
 					}
 
-					switch (phase) {
-						case 2 : {
-							
+					// *** *** *** *** ***
+
+					if (!cameraChanged) {
+						bool needs_to_visualize_train = (
+							((epochNum == config.start_epoch) && config.visualization_on_startup_train) ||
+							((epochNum > config.start_epoch) && (epochNum % config.visualization_frequency_train == config.visualization_iter_train)) ||
+							((epochNum == config.end_epoch) && config.visualization_on_finish_train)
+						);
+						bool needs_to_visualize_test = (
+							((epochNum == config.start_epoch) && config.visualization_on_startup_test) ||
+							((epochNum > config.start_epoch) && (epochNum % config.visualization_frequency_test == config.visualization_iter_test)) ||
+							((epochNum == config.end_epoch) && config.visualization_on_finish_test)
+						);
+						bool needs_to_evaluate_train = (
+							((epochNum == config.start_epoch) && config.evaluation_on_startup_train) ||
+							((epochNum > config.start_epoch) && (epochNum % config.evaluation_frequency_train == config.evaluation_iter_train)) ||
+							((epochNum == config.end_epoch) && config.evaluation_on_finish_train)
+						);
+						bool needs_to_evaluate_test = (
+							((epochNum == config.start_epoch) && config.evaluation_on_startup_test) ||
+							((epochNum > config.start_epoch) && (epochNum % config.evaluation_frequency_test == config.evaluation_iter_test)) ||
+							((epochNum == config.end_epoch) && config.evaluation_on_finish_test)
+						);
+
+						bool needs_to_render_train_poses = needs_to_visualize_train || needs_to_evaluate_train;
+						bool needs_to_render_test_poses = needs_to_visualize_test || needs_to_evaluate_test;
+
+						bool needs_to_render_train_or_test_poses = needs_to_render_train_poses || needs_to_render_test_poses;
+						bool needs_to_visualize_train_or_test = needs_to_visualize_train || needs_to_visualize_test;
+
+						// *** *** *** *** ***
+
+						if (needs_to_render_train_or_test_poses) {
+							config.ray_termination_T_threshold = config.ray_termination_T_threshold_inference; // !!! !!! !!!
+							SetConfigurationOptiX(config);
+
 							// *** *** *** *** ***
 
-							#ifdef VISUALIZATION
-								if (false) { // !!! !!! !!!
-							#else
-								if (!cameraChanged) {
-								//if (false) {
-							#endif				
-								// OptiX
-								// !!! !!! !!!
-								LARGE_INTEGER lpPerformanceCount1;
-								QueryPerformanceCounter(&lpPerformanceCount1);
-								// !!! !!! !!!
+							char *bitmap = NULL;
 
-								int poseNum_traininggg = poses_indices[0 + poseNum_training];
-								bool result;
+							// *** *** *** *** ***
 
-								if      constexpr (SH_degree == 0) result = ZeroGradientOptiXSH0(*params_OptiX);
-								else if constexpr (SH_degree == 1) result = ZeroGradientOptiXSH1(*params_OptiX);
-								else if constexpr (SH_degree == 2) result = ZeroGradientOptiXSH2(*params_OptiX);
-								else if constexpr (SH_degree == 3) result = ZeroGradientOptiXSH3(*params_OptiX);
-								else if constexpr (SH_degree == 4) result = ZeroGradientOptiXSH4(*params_OptiX);
+							if (needs_to_visualize_train_or_test)
+								bitmap = (char *)malloc(sizeof(char) * bitmapSize);
 
-								// !!! !!! !!!
-								LARGE_INTEGER lpPerformanceCount2;
-								QueryPerformanceCounter(&lpPerformanceCount2);
-								training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
-								// !!! !!! !!!
+							// *** *** *** *** ***
 
-								swprintf(consoleBuffer, 256, L"Zero OptiX gradient: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-								// !!! !!! !!!
-								QueryPerformanceCounter(&lpPerformanceCount1);
-								// !!! !!! !!!
-
-								// OptiX
-								params_OptiX->O.x = poses[poseNum_traininggg].Ox; params_OptiX->O.y = poses[poseNum_traininggg].Oy; params_OptiX->O.z = poses[poseNum_traininggg].Oz;
-								params_OptiX->R.x = poses[poseNum_traininggg].Rx; params_OptiX->R.y = poses[poseNum_traininggg].Ry; params_OptiX->R.z = poses[poseNum_traininggg].Rz;
-								params_OptiX->D.x = poses[poseNum_traininggg].Dx; params_OptiX->D.y = poses[poseNum_traininggg].Dy; params_OptiX->D.z = poses[poseNum_traininggg].Dz;
-								params_OptiX->F.x = poses[poseNum_traininggg].Fx; params_OptiX->F.y = poses[poseNum_traininggg].Fy; params_OptiX->F.z = poses[poseNum_traininggg].Fz;
-		
-								params_OptiX->poseNum = poseNum_traininggg;
-								params_OptiX->epoch = epochNum;
-								params_OptiX->copyBitmapToHostMemory = false;
-
-								swprintf(consoleBuffer, 256, L"!!! %d %d !!!\n", params_OptiX->epoch, params_OptiX->poseNum);
-								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-								if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX, false);
-								else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX, false);
-								else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX, false);
-								else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX, false);
-								else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX, false);
-								
-								// !!! !!! !!!
-								QueryPerformanceCounter(&lpPerformanceCount2);
-								training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
-								// !!! !!! !!!
-
-								swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-								float scene_extent;
-								GetSceneExtentOptiX(scene_extent);
-								swprintf(consoleBuffer, 256, L"Scene extent: %f;\n", scene_extent);
-								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-								if (epochNum > 1) {
-									swprintf(
-										text,
-										128,
-										L"epoch: %d, pose: %d / %d, loss: %lf, PSNR: %f;",
-										epochNum,
-										poseNum_training + 1,
-										NUMBER_OF_POSES,
-										params_OptiX->loss_host / (3.0 * bitmapWidth * bitmapHeight /** NUMBER_OF_POSES*/),
-										-10.0f * (logf(params_OptiX->loss_host / (3.0f * bitmapWidth * bitmapHeight/* * NUMBER_OF_POSES*/)) / logf(10.0f))
-									);
-									SendMessage(GetDlgItem(hWnd, LABEL1), WM_SETTEXT, 0, (LPARAM)text);
-								} else {
-									swprintf(text, 128, L"epoch: %d, pose: %d / %d;", epochNum, poseNum_training + 1, NUMBER_OF_POSES);
-									SendMessage(GetDlgItem(hWnd, LABEL1), WM_SETTEXT, 0, (LPARAM)text);
-								}
-
-								// *** *** ***
-
-								{
-									// OptiX
-									int state = 123456;
-
-									// !!! !!! !!!
-									LARGE_INTEGER lpPerformanceCount1;
-									QueryPerformanceCounter(&lpPerformanceCount1);
-									// !!! !!! !!!
-
-									if      constexpr (SH_degree == 0) result = UpdateGradientOptiXSH0(*params_OptiX, state);
-									else if constexpr (SH_degree == 1) result = UpdateGradientOptiXSH1(*params_OptiX, state);
-									else if constexpr (SH_degree == 2) result = UpdateGradientOptiXSH2(*params_OptiX, state);
-									else if constexpr (SH_degree == 3) result = UpdateGradientOptiXSH3(*params_OptiX, state);
-									else if constexpr (SH_degree == 4) result = UpdateGradientOptiXSH4(*params_OptiX, state);
-
-									// !!! !!! !!!
-									LARGE_INTEGER lpPerformanceCount2;
-									QueryPerformanceCounter(&lpPerformanceCount2);
-									training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
-									// !!! !!! !!!
-
-									swprintf(consoleBuffer, 256, L"Update gradient OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-									swprintf(consoleBuffer, 256, L"STATE: %d\n", state);
-									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-									swprintf(consoleBuffer, 256, L"EPOCH: %d, GAUSSIANS: %d, LOSS: %.20lf\n", epochNum, params_OptiX->numberOfGaussians, params_OptiX->loss_host / (3.0 * bitmapWidth * bitmapHeight * 1));
-									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-									
-									// *** *** *** *** ***
-
-									config.ray_termination_T_threshold = 0.01f;
-									SetConfigurationOptiX(config);
-									
-									// TRAIN
-									// !!! !!! !!!
-									if (
-										(epochNum % config.evaluation_frequency == config.evaluation_epoch) ||
-										(epochNum == config.end_epoch)
-									) {
-										// !!! !!! !!!
-										int *Gaussians_count = (int *)malloc(sizeof(int) * params_OptiX->numberOfGaussians);
-										memset(Gaussians_count, 0, sizeof(int) * params_OptiX->numberOfGaussians);
-										// !!! !!! !!!
-
-										double MSE = 0.0;
-										double PSNR = 0.0;
-										for (int pose = 0; pose < NUMBER_OF_POSES; ++pose) {
-											double poseMSE = 0.0;
-
-											params_OptiX->O.x = poses[pose].Ox; params_OptiX->O.y = poses[pose].Oy; params_OptiX->O.z = poses[pose].Oz;
-											params_OptiX->R.x = poses[pose].Rx; params_OptiX->R.y = poses[pose].Ry; params_OptiX->R.z = poses[pose].Rz;
-											params_OptiX->D.x = poses[pose].Dx; params_OptiX->D.y = poses[pose].Dy; params_OptiX->D.z = poses[pose].Dz;
-											params_OptiX->F.x = poses[pose].Fx; params_OptiX->F.y = poses[pose].Fy; params_OptiX->F.z = poses[pose].Fz;
-											params_OptiX->copyBitmapToHostMemory = true;
-
-											// *** *** *** *** ***
-
-											// !!! !!! !!!
-											//int *Gaussians_indices = (int *)malloc(sizeof(int) * params_OptiX->width * params_OptiX->height * config.max_Gaussians_per_ray);
-											// !!! !!! !!!
-
-											// *** *** *** *** ***
-
-											if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX/*, Gaussians_indices*/);
-											else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX/*, Gaussians_indices*/);
-											else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX/*, Gaussians_indices*/);
-											else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX/*, Gaussians_indices*/);
-											else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX/*, Gaussians_indices*/);
-
-											// *** *** *** *** ***
-
-											// !!! !!! !!!
-											/*for (int i = 0; i < params_OptiX->height; ++i) {
-												for (int j = 0; j < params_OptiX->width; ++j) {
-													int k = 0;
-													int ind;
-													do {
-														ind = Gaussians_indices[(k * (params_OptiX->width * params_OptiX->height)) + (i * params_OptiX->width) + j];
-														if (ind != -1) ++Gaussians_count[ind];
-														++k;
-													} while ((ind != -1) && (k < config.max_Gaussians_per_ray));
-												}
-											}
-											free(Gaussians_indices);*/
-											// !!! !!! !!!
-
-											// *** *** *** *** ***
-
-											//swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-											//WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-											for (int i = 0; i < params_OptiX->height; ++i) {
-												for (int j = 0; j < params_OptiX->width; ++j) {
-													int color_out = params_OptiX->bitmap_host[(i * params_OptiX->width) + j];
-													int R_out_i = color_out >> 16;
-													int G_out_i = (color_out >> 8) & 255;
-													int B_out_i = color_out & 255;
-													float R_out = R_out_i / 256.0f;
-													float G_out = G_out_i / 256.0f;
-													float B_out = B_out_i / 256.0f;
-
-													int color_ref = bitmap_ref[(pose * params_OptiX->width * params_OptiX->height) + ((i * params_OptiX->width) + j)];
-													int R_ref_i = color_ref >> 16;
-													int G_ref_i = (color_ref >> 8) & 255;
-													int B_ref_i = color_ref & 255;
-													float R_ref = R_ref_i / 256.0f;
-													float G_ref = G_ref_i / 256.0f;
-													float B_ref = B_ref_i / 256.0f;
-
-													poseMSE += (((R_out - R_ref) * (R_out - R_ref)) + ((G_out - G_ref) * (G_out - G_ref)) + ((B_out - B_ref) * (B_out - B_ref)));
-												}
-											}
-											poseMSE /= 3.0 * params_OptiX->width * params_OptiX->height;
-											double posePSNR = -10.0 * (log(poseMSE) / log(10.0));
-
-											swprintf(consoleBuffer, 256, L"TRAIN POSE: %d, PSNR: %.30lf;\n", pose + 1, posePSNR);
-											WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-											MSE += poseMSE;
-											PSNR += posePSNR;
-										}
-										MSE /= NUMBER_OF_POSES;
-										PSNR /= NUMBER_OF_POSES;
-										
-										swprintf(consoleBuffer, 256, L"MSE TRAIN: %.30lf;\n", MSE);
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-										swprintf(consoleBuffer, 256, L"PSNR TRAIN: %.30lf;\n", PSNR);
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-										FILE *f;
-
-										fopen_s(&f, "MSE_Train.txt", "at");
-										fprintf(f, "%d: %.30lf,\n", epochNum, MSE);
-										fclose(f);
-										
-										fopen_s(&f, "PSNR_Train.txt", "at");
-										fprintf(f, "%d: %.30lf,\n", epochNum, PSNR);
-										fclose(f);
-
-										// !!! !!! !!!
-										/*int number_of_active_Gaussians = 0;
-										for (int i = 0; i < params_OptiX->numberOfGaussians; ++i) {
-											if (Gaussians_count[i] != 0) ++number_of_active_Gaussians;
-										}
-										fopen_s(&f, "Active_Gaussians_Train.txt", "at");
-										fprintf(f, "%d: %.3lf,\n", epochNum, ((float)number_of_active_Gaussians) / params_OptiX->numberOfGaussians);
-										fclose(f);
-										free(Gaussians_count);*/
-										// !!! !!! !!!
-									}
-									// !!! !!! !!!
-
-									// TEST
-									// !!! !!! !!!
-									if (
-										(
-											(strcmp(config.data_format, "colmap") == 0) ||
-											(strcmp(config.learning_phase, "training") == 0)
-										) && (
-											(epochNum % config.evaluation_frequency == config.evaluation_epoch) ||
-											(epochNum == config.end_epoch)
-										)
-									) {
-										double MSE = 0.0;
-										double PSNR = 0.0;
-										double FPS = 0.0;
-										for (int pose = 0; pose < NUMBER_OF_POSES_TEST; ++pose) {
-											double poseMSE = 0.0;
-
-											params_OptiX->O.x = poses_test[pose].Ox; params_OptiX->O.y = poses_test[pose].Oy; params_OptiX->O.z = poses_test[pose].Oz;
-											params_OptiX->R.x = poses_test[pose].Rx; params_OptiX->R.y = poses_test[pose].Ry; params_OptiX->R.z = poses_test[pose].Rz;
-											params_OptiX->D.x = poses_test[pose].Dx; params_OptiX->D.y = poses_test[pose].Dy; params_OptiX->D.z = poses_test[pose].Dz;
-											params_OptiX->F.x = poses_test[pose].Fx; params_OptiX->F.y = poses_test[pose].Fy; params_OptiX->F.z = poses_test[pose].Fz;
-											params_OptiX->copyBitmapToHostMemory = true;
-
-											// *** *** *** *** ***
-
-											LARGE_INTEGER lpPerformanceCount1;
-											LARGE_INTEGER lpPerformanceCount2;
-
-											QueryPerformanceCounter(&lpPerformanceCount1);
-
-											if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX);
-											else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX);
-											else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX);
-											else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX);
-											else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX);
-
-											QueryPerformanceCounter(&lpPerformanceCount2);
-											//swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-											//WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-											// *** *** *** *** ***
-
-											for (int i = 0; i < params_OptiX->height; ++i) {
-												for (int j = 0; j < params_OptiX->width; ++j) {
-													int color_out = params_OptiX->bitmap_host[(i * params_OptiX->width) + j];
-													int R_out_i = color_out >> 16;
-													int G_out_i = (color_out >> 8) & 255;
-													int B_out_i = color_out & 255;
-													float R_out = R_out_i / 256.0f;
-													float G_out = G_out_i / 256.0f;
-													float B_out = B_out_i / 256.0f;
-
-													int color_ref = bitmap_ref_test[(pose * params_OptiX->width * params_OptiX->height) + ((i * params_OptiX->width) + j)];
-													int R_ref_i = color_ref >> 16;
-													int G_ref_i = (color_ref >> 8) & 255;
-													int B_ref_i = color_ref & 255;
-													float R_ref = R_ref_i / 256.0f;
-													float G_ref = G_ref_i / 256.0f;
-													float B_ref = B_ref_i / 256.0f;
-
-													poseMSE += (((R_out - R_ref) * (R_out - R_ref)) + ((G_out - G_ref) * (G_out - G_ref)) + ((B_out - B_ref) * (B_out - B_ref)));
-												}
-											}
-											poseMSE /= 3.0 * params_OptiX->width * params_OptiX->height;
-											double posePSNR = -10.0 * (log(poseMSE) / log(10.0));
-
-											double poseFPS = *((long long int *) &lpFrequency) / ((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1)));
-											swprintf(consoleBuffer, 256, L"TEST POSE: %d, PSNR: %.30lf, FPS: %.4lf;\n", pose + 1, posePSNR, poseFPS);
-											WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-											
-											FPS += poseFPS;
-											MSE += poseMSE;
-											PSNR += posePSNR;
-										}
-										FPS /= NUMBER_OF_POSES_TEST;
-										MSE /= NUMBER_OF_POSES_TEST;
-										PSNR /= NUMBER_OF_POSES_TEST;
-										
-										swprintf(consoleBuffer, 256, L"MSE TEST: %.30lf;\n", MSE);
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-										swprintf(consoleBuffer, 256, L"PSNR TEST: %.30lf;\n", PSNR);
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-										swprintf(consoleBuffer, 256, L"FPS TEST: %.4lf;\n", FPS);
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-										FILE *f;
-
-										fopen_s(&f, "MSE_Test.txt", "at");
-										fprintf(f, "%d: %.30lf,\n", epochNum, MSE);
-										fclose(f);
-										
-										fopen_s(&f, "PSNR_Test.txt", "at");
-										fprintf(f, "%d: %.30lf,\n", epochNum, PSNR);
-										fclose(f);
-
-										fopen_s(&f, "FPS_Test.txt", "at");
-										fprintf(f, "%d: %.4lf,\n", epochNum, FPS);
-										fclose(f);
-									}
-									// !!! !!! !!!
-
-									config.ray_termination_T_threshold = ray_termination_T_threshold_training;
-									SetConfigurationOptiX(config);
-
-									// *** *** *** *** ***
-
-									if (poses_indices[poseNum_training] == 0) {
-										swprintf(consoleBuffer, 256, L"****************************************************************************************************\n");
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-										swprintf(consoleBuffer, 256, L"LOSS: %.20lf\n", ((SRenderParams<0> *)params)[0].loss / (3.0 * bitmapWidth * bitmapHeight * 1));
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-										swprintf(consoleBuffer, 256, L"EPOCH NUM: %d\n", epochNum);
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-										swprintf(consoleBuffer, 256, L"POSE NUM: %d\n", poses_indices[poseNum_training]);
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-										swprintf(consoleBuffer, 256, L"POSE NUM (IN CYCLE): %d\n", poseNum_training);
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-										swprintf(consoleBuffer, 256, L"****************************************************************************************************\n");
-										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-									}
-
-									// *** *** ***
-
-									// !!! !!! !!!
-									QueryPerformanceCounter(&lpPerformanceCount1);
-									// !!! !!! !!!
-
-									++epochNum;
-									if (poseNum_training < NUMBER_OF_POSES - 1) {
-										++poseNum_training;
-									} else {
-										for (int i = 0; i < NUMBER_OF_POSES; i++) poses_indices[i] = i;
-										for (int i = 0; i < NUMBER_OF_POSES - 1; i++) {
-											int index = i + (RandomInteger() % (NUMBER_OF_POSES - i));
-											if (index != i) {
-												poses_indices[i] ^= poses_indices[index];
-												poses_indices[index] ^= poses_indices[i];
-												poses_indices[i] ^= poses_indices[index];
-											}
-										}
-										poseNum_training = 0;
-									}
-
-									// !!! !!! !!!
-									QueryPerformanceCounter(&lpPerformanceCount2);
-									training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
-									// !!! !!! !!!
-
-									if (
-										(params_OptiX->epoch % config.evaluation_frequency == config.evaluation_epoch) ||
-										(params_OptiX->epoch == config.end_epoch)
-									) {
-										FILE *f;
-
-										fopen_s(&f, "Training_Time.txt", "at");
-										fprintf(f, "%d: %.2lf,\n", params_OptiX->epoch, training_time);
-										fclose(f);
-									}
-
-									// *** *** *** *** ***
-
-									if (
-										(params_OptiX->epoch % config.saving_frequency == 0) ||
-										(params_OptiX->epoch == config.end_epoch)
-									) {
-										if      constexpr (SH_degree == 0) result = DumpParametersOptiXSH0(*params_OptiX);
-										else if constexpr (SH_degree == 1) result = DumpParametersOptiXSH1(*params_OptiX);
-										else if constexpr (SH_degree == 2) result = DumpParametersOptiXSH2(*params_OptiX);
-										else if constexpr (SH_degree == 3) result = DumpParametersOptiXSH3(*params_OptiX);
-										else if constexpr (SH_degree == 4) result = DumpParametersOptiXSH4(*params_OptiX);
-																				
-										if      constexpr (SH_degree == 0) result = DumpParametersToPLYFileOptiXSH0(*params_OptiX);
-										else if constexpr (SH_degree == 1) result = DumpParametersToPLYFileOptiXSH1(*params_OptiX);
-										else if constexpr (SH_degree == 2) result = DumpParametersToPLYFileOptiXSH2(*params_OptiX);
-										else if constexpr (SH_degree == 3) result = DumpParametersToPLYFileOptiXSH3(*params_OptiX);
-										else if constexpr (SH_degree == 4) result = DumpParametersToPLYFileOptiXSH4(*params_OptiX);
-									}
-
-									if (params_OptiX->epoch == config.end_epoch)
-										PostQuitMessage(0); // !!! !!! !!!
-
-									if (params_OptiX->epoch % 10 == 0) cameraChanged = true;
-								}
-							} else {
-								bool result;
-
-								params_OptiX->O.x = Ox; params_OptiX->O.y = Oy; params_OptiX->O.z = Oz;
-								params_OptiX->R.x = Rx; params_OptiX->R.y = Ry; params_OptiX->R.z = Rz;
-								params_OptiX->D.x = Dx; params_OptiX->D.y = Dy; params_OptiX->D.z = Dz;
-								params_OptiX->F.x = Fx; params_OptiX->F.y = Fy; params_OptiX->F.z = Fz;
-								params_OptiX->copyBitmapToHostMemory = true;
-
-								config.ray_termination_T_threshold = 0.01f;
-								SetConfigurationOptiX(config);
-
-								if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX);
-								else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX);
-								else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX);
-								else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX);
-								else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX);
-
-								swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
-								WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
-
-								config.ray_termination_T_threshold = ray_termination_T_threshold_training;
-								SetConfigurationOptiX(config);
+							// TRAIN
+							if (needs_to_render_train_poses) {
+								char buf[256];
+								wchar_t bufw[256];
 
 								// *** *** *** *** ***
 
-								cameraChanged = false;
-								RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE);
+								if (needs_to_visualize_train) {
+									swprintf(bufw, 256, L"output\\%d\\renders\\train\\%d", next_available_dir_id, params_OptiX->epoch);
+									CreateDirectory(bufw, NULL);
+
+									wcstombs_s(NULL, buf, 256, bufw, 256);
+								}
+
+								// *** *** *** *** ***
+
+								double MSE = 0.0;
+								double PSNR = 0.0;
+								double FPS = 0.0;
+
+								for (int pose = 0; pose < NUMBER_OF_POSES; ++pose) {
+									params_OptiX->O.x = poses[pose].Ox; params_OptiX->O.y = poses[pose].Oy; params_OptiX->O.z = poses[pose].Oz;
+									params_OptiX->R.x = poses[pose].Rx; params_OptiX->R.y = poses[pose].Ry; params_OptiX->R.z = poses[pose].Rz;
+									params_OptiX->D.x = poses[pose].Dx; params_OptiX->D.y = poses[pose].Dy; params_OptiX->D.z = poses[pose].Dz;
+									params_OptiX->F.x = poses[pose].Fx; params_OptiX->F.y = poses[pose].Fy; params_OptiX->F.z = poses[pose].Fz;
+									params_OptiX->copyBitmapToHostMemory = true;
+
+									// *** *** *** *** ***
+
+									LARGE_INTEGER lpPerformanceCount1;
+									LARGE_INTEGER lpPerformanceCount2;
+
+									bool result;
+
+									QueryPerformanceCounter(&lpPerformanceCount1);
+
+									if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX);
+									else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX);
+									else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX);
+									else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX);
+									else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX);
+
+									QueryPerformanceCounter(&lpPerformanceCount2);
+
+									swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+									// *** *** *** *** ***
+
+									if (needs_to_visualize_train) {
+										char *fName;
+										char fPath[256];
+
+										if (strcmp(config.data_format, "colmap") != 0)
+											fName = strrchr(img_names[pose], '/') + 1; // !!! !!! !!!
+										else
+											fName = img_names[pose];
+
+										sprintf_s(fPath, 256, "%s\\%s_iter_%d.bmp", buf, fName, epochNum);
+
+										// *** *** *** *** ***
+
+										FILE *f;
+
+										// *** *** *** *** ***
+
+										fopen_s(&f, fPath, "wb+");
+										fwrite(BMPFileHeader, 54, 1, f);
+
+										// *** *** *** *** ***
+
+										for (int i = 0; i < bitmapHeight; ++i) {
+											for (int j = 0; j < bitmapWidth; ++j) {
+												unsigned color = params_OptiX->bitmap_host[(i * bitmapWidth) + j];
+
+												unsigned char R = color >> 16;
+												unsigned char G = (color >> 8) & 255;
+												unsigned char B = color & 255;
+
+												bitmap[(((bitmapHeight - 1 - i) * scanLineSize) + (j * 3))] = B;
+												bitmap[(((bitmapHeight - 1 - i) * scanLineSize) + (j * 3)) + 1] = G;
+												bitmap[(((bitmapHeight - 1 - i) * scanLineSize) + (j * 3)) + 2] = R;
+											}
+										}
+
+										// *** *** *** *** ***
+
+										fwrite(bitmap, bitmapSize - 54, 1, f); // !!! !!! !!!
+										fclose(f);
+
+										// *** *** *** *** ***
+
+										mbstowcs_s(NULL, bufw, 256, fPath, 256);  // !!! !!! !!!
+										swprintf(consoleBuffer, 256, L"Saving render to file %s... .\n", bufw);
+										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+									}
+
+									// *** *** *** *** ***
+
+									if (needs_to_evaluate_train) {
+										double poseMSE = 0.0;
+
+										for (int i = 0; i < params_OptiX->height; ++i) {
+											for (int j = 0; j < params_OptiX->width; ++j) {
+												int color_out = params_OptiX->bitmap_host[(i * params_OptiX->width) + j];
+												int R_out_i = color_out >> 16;
+												int G_out_i = (color_out >> 8) & 255;
+												int B_out_i = color_out & 255;
+												float R_out = R_out_i / 256.0f;
+												float G_out = G_out_i / 256.0f;
+												float B_out = B_out_i / 256.0f;
+
+												int color_ref = bitmap_ref[(pose * params_OptiX->width * params_OptiX->height) + ((i * params_OptiX->width) + j)];
+												int R_ref_i = color_ref >> 16;
+												int G_ref_i = (color_ref >> 8) & 255;
+												int B_ref_i = color_ref & 255;
+												float R_ref = R_ref_i / 256.0f;
+												float G_ref = G_ref_i / 256.0f;
+												float B_ref = B_ref_i / 256.0f;
+
+												poseMSE += (((R_out - R_ref) * (R_out - R_ref)) + ((G_out - G_ref) * (G_out - G_ref)) + ((B_out - B_ref) * (B_out - B_ref)));
+											}
+										}
+										poseMSE /= 3.0 * params_OptiX->width * params_OptiX->height;
+										double posePSNR = -10.0 * (log(poseMSE) / log(10.0));
+
+										double poseFPS = *((long long int *) &lpFrequency) / ((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1)));
+										swprintf(consoleBuffer, 256, L"TRAIN POSE: %d, PSNR: %.30lf, FPS: %.4lf;\n", pose + 1, posePSNR, poseFPS);
+										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+										FPS += poseFPS;
+										MSE += poseMSE;
+										PSNR += posePSNR;
+									}
+								}
+
+								FPS /= NUMBER_OF_POSES;
+								MSE /= NUMBER_OF_POSES;
+								PSNR /= NUMBER_OF_POSES;
+
+								// *** *** *** *** ***
+
+								if (needs_to_evaluate_train) {
+									char fPath[256];
+									FILE *f;
+
+									sprintf_s(fPath, 256, "output\\%d\\stats\\MSE_train.txt", next_available_dir_id);
+
+									fopen_s(&f, fPath, "at");
+									fprintf(f, "%d: %.30lf,\n", epochNum, MSE);
+									fclose(f);
+
+									sprintf_s(fPath, 256, "output\\%d\\stats\\PSNR_train.txt", next_available_dir_id);
+
+									fopen_s(&f, fPath, "at");
+									fprintf(f, "%d: %.30lf,\n", epochNum, PSNR);
+									fclose(f);
+
+									sprintf_s(fPath, 256, "output\\%d\\stats\\FPS_train.txt", next_available_dir_id);
+
+									fopen_s(&f, fPath, "at");
+									fprintf(f, "%d: %.4lf,\n", epochNum, FPS);
+									fclose(f);
+
+									// *** *** *** *** ***
+
+									swprintf(consoleBuffer, 256, L"MSE TRAIN: %.30lf;\n", MSE);
+									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+									swprintf(consoleBuffer, 256, L"PSNR TRAIN: %.30lf;\n", PSNR);
+									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+									swprintf(consoleBuffer, 256, L"FPS TRAIN: %.4lf;\n", FPS);
+									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+								}
 							}
 
-							break;
+							// *** *** *** *** ***
+
+							// TEST
+							if (needs_to_render_test_poses) {
+								char buf[256];
+								wchar_t bufw[256];
+
+								// *** *** *** *** ***
+
+								if (needs_to_visualize_test) {
+									swprintf(bufw, 256, L"output\\%d\\renders\\test\\%d", next_available_dir_id, params_OptiX->epoch);
+									CreateDirectory(bufw, NULL);
+
+									wcstombs_s(NULL, buf, 256, bufw, 256);
+
+									bitmap = (char *)malloc(sizeof(char) * bitmapSize);
+								}
+
+								// *** *** *** *** ***
+
+								double MSE = 0.0;
+								double PSNR = 0.0;
+								double FPS = 0.0;
+
+								for (int pose = 0; pose < NUMBER_OF_POSES_TEST; ++pose) {
+									params_OptiX->O.x = poses_test[pose].Ox; params_OptiX->O.y = poses_test[pose].Oy; params_OptiX->O.z = poses_test[pose].Oz;
+									params_OptiX->R.x = poses_test[pose].Rx; params_OptiX->R.y = poses_test[pose].Ry; params_OptiX->R.z = poses_test[pose].Rz;
+									params_OptiX->D.x = poses_test[pose].Dx; params_OptiX->D.y = poses_test[pose].Dy; params_OptiX->D.z = poses_test[pose].Dz;
+									params_OptiX->F.x = poses_test[pose].Fx; params_OptiX->F.y = poses_test[pose].Fy; params_OptiX->F.z = poses_test[pose].Fz;
+									params_OptiX->copyBitmapToHostMemory = true;
+
+									// *** *** *** *** ***
+
+									LARGE_INTEGER lpPerformanceCount1;
+									LARGE_INTEGER lpPerformanceCount2;
+
+									bool result;
+
+									QueryPerformanceCounter(&lpPerformanceCount1);
+
+									if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX);
+									else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX);
+									else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX);
+									else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX);
+									else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX);
+
+									QueryPerformanceCounter(&lpPerformanceCount2);
+
+									swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+									// *** *** *** *** ***
+
+									if (needs_to_visualize_test) {
+										char *fName;
+										char fPath[256];
+
+										if (strcmp(config.data_format, "colmap") != 0)
+											fName = strrchr(img_names_test[pose], '/') + 1; // !!! !!! !!!
+										else
+											fName = img_names_test[pose];
+
+										sprintf_s(fPath, 256, "%s\\%s_iter_%d.bmp", buf, fName, epochNum);
+
+										// *** *** *** *** ***
+
+										FILE *f;
+
+										// *** *** *** *** ***
+
+										fopen_s(&f, fPath, "wb+");
+										fwrite(BMPFileHeader, 54, 1, f);
+
+										// *** *** *** *** ***
+
+										for (int i = 0; i < bitmapHeight; ++i) {
+											for (int j = 0; j < bitmapWidth; ++j) {
+												unsigned color = params_OptiX->bitmap_host[(i * bitmapWidth) + j];
+
+												unsigned char R = color >> 16;
+												unsigned char G = (color >> 8) & 255;
+												unsigned char B = color & 255;
+
+												bitmap[(((bitmapHeight - 1 - i) * scanLineSize) + (j * 3))] = B;
+												bitmap[(((bitmapHeight - 1 - i) * scanLineSize) + (j * 3)) + 1] = G;
+												bitmap[(((bitmapHeight - 1 - i) * scanLineSize) + (j * 3)) + 2] = R;
+											}
+										}
+
+										// *** *** *** *** ***
+
+										fwrite(bitmap, bitmapSize - 54, 1, f); // !!! !!! !!!
+										fclose(f);
+
+										// *** *** *** *** ***
+
+										mbstowcs_s(NULL, bufw, 256, fPath, 256); // !!! !!! !!!
+										swprintf(consoleBuffer, 256, L"Saving render to file %s... .\n", bufw);
+										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+									}
+
+									// *** *** *** *** ***
+
+									if (needs_to_evaluate_test) {
+										double poseMSE = 0.0;
+
+										for (int i = 0; i < params_OptiX->height; ++i) {
+											for (int j = 0; j < params_OptiX->width; ++j) {
+												int color_out = params_OptiX->bitmap_host[(i * params_OptiX->width) + j];
+												int R_out_i = color_out >> 16;
+												int G_out_i = (color_out >> 8) & 255;
+												int B_out_i = color_out & 255;
+												float R_out = R_out_i / 256.0f;
+												float G_out = G_out_i / 256.0f;
+												float B_out = B_out_i / 256.0f;
+
+												int color_ref = bitmap_ref_test[(pose * params_OptiX->width * params_OptiX->height) + ((i * params_OptiX->width) + j)];
+												int R_ref_i = color_ref >> 16;
+												int G_ref_i = (color_ref >> 8) & 255;
+												int B_ref_i = color_ref & 255;
+												float R_ref = R_ref_i / 256.0f;
+												float G_ref = G_ref_i / 256.0f;
+												float B_ref = B_ref_i / 256.0f;
+
+												poseMSE += (((R_out - R_ref) * (R_out - R_ref)) + ((G_out - G_ref) * (G_out - G_ref)) + ((B_out - B_ref) * (B_out - B_ref)));
+											}
+										}
+										poseMSE /= 3.0 * params_OptiX->width * params_OptiX->height;
+										double posePSNR = -10.0 * (log(poseMSE) / log(10.0));
+
+										double poseFPS = *((long long int *) &lpFrequency) / ((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1)));
+										swprintf(consoleBuffer, 256, L"TEST POSE: %d, PSNR: %.30lf, FPS: %.4lf;\n", pose + 1, posePSNR, poseFPS);
+										WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+										FPS += poseFPS;
+										MSE += poseMSE;
+										PSNR += posePSNR;
+									}
+								}
+
+								FPS /= NUMBER_OF_POSES_TEST;
+								MSE /= NUMBER_OF_POSES_TEST;
+								PSNR /= NUMBER_OF_POSES_TEST;
+
+								// *** *** *** *** ***
+
+								if (needs_to_evaluate_test) {
+									char fPath[256];
+									FILE *f;
+
+									sprintf_s(fPath, 256, "output\\%d\\stats\\MSE_test.txt", next_available_dir_id);
+
+									fopen_s(&f, fPath, "at");
+									fprintf(f, "%d: %.30lf,\n", epochNum, MSE);
+									fclose(f);
+
+									sprintf_s(fPath, 256, "output\\%d\\stats\\PSNR_test.txt", next_available_dir_id);
+
+									fopen_s(&f, fPath, "at");
+									fprintf(f, "%d: %.30lf,\n", epochNum, PSNR);
+									fclose(f);
+
+									sprintf_s(fPath, 256, "output\\%d\\stats\\FPS_test.txt", next_available_dir_id);
+
+									fopen_s(&f, fPath, "at");
+									fprintf(f, "%d: %.4lf,\n", epochNum, FPS);
+									fclose(f);
+
+									// *** *** *** *** ***
+
+									swprintf(consoleBuffer, 256, L"MSE TEST: %.30lf;\n", MSE);
+									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+									swprintf(consoleBuffer, 256, L"PSNR TEST: %.30lf;\n", PSNR);
+									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+									swprintf(consoleBuffer, 256, L"FPS TEST: %.4lf;\n", FPS);
+									WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+								}
+							}
+
+							// *** *** *** *** ***
+
+							if (needs_to_visualize_train_or_test)
+								free(bitmap);
+
+							// *** *** *** *** ***
+
+							config.ray_termination_T_threshold = ray_termination_T_threshold_training; // !!! !!! !!!
+							SetConfigurationOptiX(config);
 						}
+						
+						// *** *** *** *** ***
+
+						// PROGRAM TERMINATION
+						++epochNum;
+
+						// !!! !!! !!!
+						if (params_OptiX->epoch > config.end_epoch)
+							PostQuitMessage(0);
+						// !!! !!! !!!
+
+						// !!! !!! !!!
+						if (params_OptiX->epoch % 10 == 0) cameraChanged = true;
+						// !!! !!! !!!
+
+						// *** *** *** *** ***
+
+						LARGE_INTEGER lpPerformanceCount1;
+						LARGE_INTEGER lpPerformanceCount2;
+
+						// *** *** *** *** ***
+
+						bool result;
+
+						// !!! !!! !!!
+						QueryPerformanceCounter(&lpPerformanceCount1);
+						// !!! !!! !!!
+
+						if      constexpr (SH_degree == 0) result = ZeroGradientOptiXSH0(*params_OptiX);
+						else if constexpr (SH_degree == 1) result = ZeroGradientOptiXSH1(*params_OptiX);
+						else if constexpr (SH_degree == 2) result = ZeroGradientOptiXSH2(*params_OptiX);
+						else if constexpr (SH_degree == 3) result = ZeroGradientOptiXSH3(*params_OptiX);
+						else if constexpr (SH_degree == 4) result = ZeroGradientOptiXSH4(*params_OptiX);
+
+						// !!! !!! !!!
+						QueryPerformanceCounter(&lpPerformanceCount2);
+						training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
+						// !!! !!! !!!
+
+						swprintf(consoleBuffer, 256, L"Zero OptiX gradient: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+						WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+						// *** *** *** *** ***
+
+						// !!! !!! !!!
+						QueryPerformanceCounter(&lpPerformanceCount1);
+						// !!! !!! !!!
+
+						params_OptiX->O.x = poses[poseInd_training].Ox; params_OptiX->O.y = poses[poseInd_training].Oy; params_OptiX->O.z = poses[poseInd_training].Oz;
+						params_OptiX->R.x = poses[poseInd_training].Rx; params_OptiX->R.y = poses[poseInd_training].Ry; params_OptiX->R.z = poses[poseInd_training].Rz;
+						params_OptiX->D.x = poses[poseInd_training].Dx; params_OptiX->D.y = poses[poseInd_training].Dy; params_OptiX->D.z = poses[poseInd_training].Dz;
+						params_OptiX->F.x = poses[poseInd_training].Fx; params_OptiX->F.y = poses[poseInd_training].Fy; params_OptiX->F.z = poses[poseInd_training].Fz;
+		
+						params_OptiX->poseNum = poseInd_training;
+						params_OptiX->epoch = epochNum;
+						params_OptiX->copyBitmapToHostMemory = false;
+
+						if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX, false);
+						else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX, false);
+						else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX, false);
+						else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX, false);
+						else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX, false);
+								
+						// !!! !!! !!!
+						QueryPerformanceCounter(&lpPerformanceCount2);
+						training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
+						// !!! !!! !!!
+
+						swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+						WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+						// *** *** *** *** ***
+
+						float scene_extent;
+						GetSceneExtentOptiX(scene_extent);
+						swprintf(consoleBuffer, 256, L"Scene extent: %f;\n", scene_extent);
+						WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+						// *** *** *** *** ***
+
+						if (epochNum > 1) {
+							swprintf(
+								text,
+								128,
+								L"iteration: %d, pose: %d / %d (%d), MSE: %lf, PSNR: %f;",
+								epochNum,
+								poseNum_training + 1,
+								NUMBER_OF_POSES,
+								poseInd_training + 1,
+								params_OptiX->loss_host / (3.0 * bitmapWidth * bitmapHeight),
+								-10.0f * (logf(params_OptiX->loss_host / (3.0f * bitmapWidth * bitmapHeight)) / logf(10.0f))
+							);
+							SendMessage(GetDlgItem(hWnd, LABEL1), WM_SETTEXT, 0, (LPARAM)text);
+						} else {
+							swprintf(
+								text,
+								128,
+								L"epoch: %d, pose: %d / %d (%d);",
+								epochNum,
+								poseNum_training + 1,
+								NUMBER_OF_POSES,
+								poseInd_training + 1
+							);
+							SendMessage(GetDlgItem(hWnd, LABEL1), WM_SETTEXT, 0, (LPARAM)text);
+						}
+
+						// *** *** *** *** ***
+
+						// !!! !!! !!!
+						QueryPerformanceCounter(&lpPerformanceCount1);
+						// !!! !!! !!!
+
+						if      constexpr (SH_degree == 0) result = UpdateGradientOptiXSH0(*params_OptiX);
+						else if constexpr (SH_degree == 1) result = UpdateGradientOptiXSH1(*params_OptiX);
+						else if constexpr (SH_degree == 2) result = UpdateGradientOptiXSH2(*params_OptiX);
+						else if constexpr (SH_degree == 3) result = UpdateGradientOptiXSH3(*params_OptiX);
+						else if constexpr (SH_degree == 4) result = UpdateGradientOptiXSH4(*params_OptiX);
+
+						// !!! !!! !!!
+						QueryPerformanceCounter(&lpPerformanceCount2);
+						training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
+						// !!! !!! !!!
+
+						swprintf(consoleBuffer, 256, L"Update gradient OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+						WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+						swprintf(consoleBuffer, 256, L"EPOCH: %d, GAUSSIANS: %d, MSE: %.20lf\n", epochNum, params_OptiX->numberOfGaussians, params_OptiX->loss_host / (3.0 * bitmapWidth * bitmapHeight * 1));
+						WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+						// *** *** *** *** ***
+							
+						// !!! !!! !!!
+						QueryPerformanceCounter(&lpPerformanceCount1);
+						// !!! !!! !!!
+
+						if (poseNum_training < NUMBER_OF_POSES - 1) {
+							++poseNum_training;
+						} else {
+							// !!! !!! !!!
+							seed_dword_prev = seed_dword;
+							// !!! !!! !!!
+
+							for (int i = 0; i < NUMBER_OF_POSES; i++) poses_indices[i] = i;
+							for (int i = 0; i < NUMBER_OF_POSES - 1; i++) {
+								int index = i + (RandomInteger() % (NUMBER_OF_POSES - i));
+								if (index != i) {
+									poses_indices[i] ^= poses_indices[index];
+									poses_indices[index] ^= poses_indices[i];
+									poses_indices[i] ^= poses_indices[index];
+								}
+							}
+
+							poseNum_training = 0;
+						}
+
+						poseInd_training = poses_indices[poseNum_training]; // !!! !!! !!!
+
+						// !!! !!! !!!
+						QueryPerformanceCounter(&lpPerformanceCount2);
+						training_time += (((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1))) / *((long long int *) &lpFrequency));
+						// !!! !!! !!!
+
+						// *** *** *** *** ***
+
+						// SAVE CHECKPOINT
+						if (
+							(params_OptiX->epoch % config.saving_frequency == config.saving_iter) ||
+							(params_OptiX->epoch == config.end_epoch)
+						) {
+							char buf[256];
+							wchar_t bufw[256];
+
+							swprintf(bufw, 256, L"output\\%d\\checkpoints\\%d", next_available_dir_id, params_OptiX->epoch);
+							CreateDirectory(bufw, NULL);
+
+							wcstombs_s(NULL, buf, 256, bufw, 256);
+
+							// *** *** *** *** ***
+
+							if      constexpr (SH_degree == 0) result = DumpParametersOptiXSH0(*params_OptiX, buf);
+							else if constexpr (SH_degree == 1) result = DumpParametersOptiXSH1(*params_OptiX, buf);
+							else if constexpr (SH_degree == 2) result = DumpParametersOptiXSH2(*params_OptiX, buf);
+							else if constexpr (SH_degree == 3) result = DumpParametersOptiXSH3(*params_OptiX, buf);
+							else if constexpr (SH_degree == 4) result = DumpParametersOptiXSH4(*params_OptiX, buf);
+
+							// *** *** *** *** ***
+
+							// !!! !!! !!!
+							// Save the seed state before computing the training poses indices permutation
+							char fPath[256];
+							FILE *f;
+
+							sprintf_s(fPath, "%s\\seed_iter_%d.checkpoint", buf, params_OptiX->epoch);
+
+							fopen_s(&f, fPath, "wb");
+							fwrite(&seed_dword_prev, sizeof(unsigned) * 1, 1, f);
+							fclose(f);
+							// !!! !!! !!!
+						}
+
+						// *** *** *** *** ***
+							
+						// SAVE TO *.PLY FILE
+						if (
+							(params_OptiX->epoch % config.saving_frequency_PLY == config.saving_iter_PLY) ||
+							(params_OptiX->epoch == config.end_epoch)
+						) {
+							char buf[256];
+							wchar_t bufw[256];
+
+							swprintf(bufw, 256, L"output\\%d\\PLY files\\%d", next_available_dir_id, params_OptiX->epoch);
+							CreateDirectory(bufw, NULL);
+
+							wcstombs_s(NULL, buf, 256, bufw, 256);
+
+							if      constexpr (SH_degree == 0) result = DumpParametersToPLYFileOptiXSH0(*params_OptiX, buf);
+							else if constexpr (SH_degree == 1) result = DumpParametersToPLYFileOptiXSH1(*params_OptiX, buf);
+							else if constexpr (SH_degree == 2) result = DumpParametersToPLYFileOptiXSH2(*params_OptiX, buf);
+							else if constexpr (SH_degree == 3) result = DumpParametersToPLYFileOptiXSH3(*params_OptiX, buf);
+							else if constexpr (SH_degree == 4) result = DumpParametersToPLYFileOptiXSH4(*params_OptiX, buf);
+						}
+
+						// *** *** *** *** ***
+
+						if (
+							(params_OptiX->epoch % config.evaluation_frequency_train == config.evaluation_iter_train) ||
+							(params_OptiX->epoch % config.evaluation_frequency_test == config.evaluation_iter_test) ||
+							(params_OptiX->epoch == config.end_epoch)
+						) {
+							char fPath[256];
+							FILE *f;
+
+							sprintf_s(fPath, 256, "output\\%d\\stats\\training_time.txt", next_available_dir_id);
+
+							fopen_s(&f, fPath, "at");
+							fprintf(f, "%d: %.2lf,\n", params_OptiX->epoch, training_time);
+							fclose(f);
+						}
+					} else {
+						params_OptiX->O.x = Ox; params_OptiX->O.y = Oy; params_OptiX->O.z = Oz;
+						params_OptiX->R.x = Rx; params_OptiX->R.y = Ry; params_OptiX->R.z = Rz;
+						params_OptiX->D.x = Dx; params_OptiX->D.y = Dy; params_OptiX->D.z = Dz;
+						params_OptiX->F.x = Fx; params_OptiX->F.y = Fy; params_OptiX->F.z = Fz;
+						params_OptiX->copyBitmapToHostMemory = true;
+
+						// *** *** *** *** ***
+
+						config.ray_termination_T_threshold = config.ray_termination_T_threshold_inference; // !!! !!! !!!
+						SetConfigurationOptiX(config);
+
+						// *** *** *** *** ***
+
+						LARGE_INTEGER lpPerformanceCount1;
+						LARGE_INTEGER lpPerformanceCount2;
+
+						bool result;
+
+						// *** *** *** *** ***
+
+						QueryPerformanceCounter(&lpPerformanceCount1);
+
+						if      constexpr (SH_degree == 0) result = RenderOptiXSH0(*params_OptiX);
+						else if constexpr (SH_degree == 1) result = RenderOptiXSH1(*params_OptiX);
+						else if constexpr (SH_degree == 2) result = RenderOptiXSH2(*params_OptiX);
+						else if constexpr (SH_degree == 3) result = RenderOptiXSH3(*params_OptiX);
+						else if constexpr (SH_degree == 4) result = RenderOptiXSH4(*params_OptiX);
+
+						QueryPerformanceCounter(&lpPerformanceCount2);
+
+						// *** *** *** *** ***
+		
+						swprintf(consoleBuffer, 256, L"Render OptiX: %s", (result ? L"OK... .\n" : L"Failed... .\n"));
+						WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+						// *** *** *** *** ***
+
+						config.ray_termination_T_threshold = ray_termination_T_threshold_training;
+						SetConfigurationOptiX(config);
+
+						// *** *** *** *** ***
+
+						// PRINT SCREEN
+						// !!! !!! !!!
+						if (print_screen_down) {
+							char fPath[256];
+
+							// *** *** *** *** ***
+
+							sprintf_s(fPath, 256, "output\\%d\\screenshots\\%d.bmp", next_available_dir_id, next_available_screenshot_id);
+
+							// *** *** *** *** ***
+
+							FILE *f;
+
+							// *** *** *** *** ***
+
+							fopen_s(&f, fPath, "wb+");
+							fwrite(BMPFileHeader, 54, 1, f);
+
+							// *** *** *** *** ***
+
+							char *bitmap = (char *)malloc(sizeof(char) * bitmapSize);
+
+							// *** *** *** *** ***
+
+							for (int i = 0; i < bitmapHeight; ++i) {
+								for (int j = 0; j < bitmapWidth; ++j) {
+									unsigned color = params_OptiX->bitmap_host[(i * bitmapWidth) + j];
+
+									unsigned char R = color >> 16;
+									unsigned char G = (color >> 8) & 255;
+									unsigned char B = color & 255;
+
+									bitmap[(((bitmapHeight - 1 - i) * scanLineSize) + (j * 3))] = B;
+									bitmap[(((bitmapHeight - 1 - i) * scanLineSize) + (j * 3)) + 1] = G;
+									bitmap[(((bitmapHeight - 1 - i) * scanLineSize) + (j * 3)) + 2] = R;
+								}
+							}
+
+							// *** *** *** *** ***
+
+							fwrite(bitmap, bitmapSize - 54, 1, f); // !!! !!! !!!
+							fclose(f);
+
+							// *** *** *** *** ***
+
+							free(bitmap);
+
+							// *** *** *** *** ***
+
+							wchar_t bufw[256];
+
+							mbstowcs_s(NULL, bufw, 256, fPath, 256);  // !!! !!! !!!
+							swprintf(consoleBuffer, 256, L"Saving screenshot to file %s... .\n", bufw);
+							WriteConsole(GetStdHandle(STD_OUTPUT_HANDLE), consoleBuffer, wcslen(consoleBuffer), NULL, NULL);
+
+							// *** *** *** *** ***
+
+							++next_available_screenshot_id; // !!! !!! !!!
+							print_screen_down = false;
+						}
+						// !!! !!! !!!
+
+						// *** *** *** *** ***
+
+						char buffer[256];
+
+						FPS_inference = *((long long int *) &lpFrequency) / ((double)(*((long long int *) &lpPerformanceCount2) - *((long long int *) &lpPerformanceCount1)));
+
+						if (customPose)
+							sprintf_s(buffer, "RaySplats - Custom pose (FPS: %.4lf)", FPS_inference);
+						else
+							sprintf_s(buffer, "RaySplats - Pose: %d / %d (FPS: %.4lf)", poseNum_rendering + 1, NUMBER_OF_POSES, FPS_inference);
+						SetWindowTextA(hWnd, buffer);
+
+						// *** *** *** *** ***
+
+						cameraChanged = false;
+						RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE);
 					}
-					break;
 				}
 			}
 			break;
@@ -1986,7 +2667,7 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
 			return (INT_PTR)TRUE;
 		}
 		case WM_COMMAND : {
-			if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) {
+			if ((LOWORD(wParam) == IDOK) || (LOWORD(wParam) == IDCANCEL)) {
 				EndDialog(hDlg, LOWORD(wParam));
 				return (INT_PTR)TRUE;
 			}

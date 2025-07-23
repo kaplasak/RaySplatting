@@ -4,6 +4,13 @@
 
 // *** *** *** *** ***
 
+// !!! !!! !!!
+extern unsigned seed_dword;
+extern unsigned long long seed_qword;
+// !!! !!! !!!
+
+// *** *** *** *** ***
+
 struct SCamera {
 	float Ox; float Oy; float Oz;
 	float Rx; float Ry; float Rz;
@@ -12,20 +19,6 @@ struct SCamera {
 };
 
 // *** *** *** *** ***
-
-/*struct SGaussianComponent {
-	float mX, mY, mZ;
-
-	float qr, qi, qj, qk;
-	float sX, sY, sZ;
-
-	float A11, A12, A13;
-	float A21, A22, A23;
-	float A31, A32, A33;
-
-	float R, G, B;
-	float alpha;
-};*/
 
 template<int SH_degree>
 struct SGaussianComponent {
@@ -61,16 +54,6 @@ struct SGaussianComponent<0> {
 
 // *** *** *** *** ***
 
-struct SLBVHTreeNode {
-	char info;
-	int lNode, rNode;
-	float lB, rB;
-	float uB, dB;
-	float bB, fB;
-};
-
-// *** *** *** *** ***
-
 float RandomFloat();
 unsigned RandomInteger();
 double RandomDouble();
@@ -79,78 +62,14 @@ double RandomDouble();
 
 template<int SH_degree>
 struct SRenderParams {
-	float Ox; float Oy; float Oz;
-	float Rx; float Ry; float Rz;
-	float Dx; float Dy; float Dz;
-	float Fx; float Fy; float Fz;
 	float double_tan_half_fov_x;
 	float double_tan_half_fov_y;
-	void* bitmap;
+	void *bitmap;
 	int w; int h;
-	SLBVHTreeNode* tree;
 	SGaussianComponent<SH_degree> *GC;
 	int numberOfGaussians;
-
-	int* d;
-	int D;
-	int H;
-
-	int threadsNum;
-	int threadId;
-	bool volumetric;
-
-	// !!! !!! !!!
-	SCamera *poses;
 	unsigned *bitmap_ref;
-	int poseNum;
-	int epoch;
 	int NUMBER_OF_POSES;
-	double loss;
-
-	void *dL_dparams_1;
-	void *dL_dparams_2;
-	void *dL_dparams_3;
-	void *dL_dparams_4;
-
-	void *m1, *m2, *m3, *m4;
-	void *v1, *v2, *v3, *v4;
-
-	int *dump;
-	// !!! !!! !!!
-
-	// *** *** *** *** ***
-
-	typedef int cufftHandle;
-	typedef void COMPLEX;
-	typedef void REAL;
-
-	// !!! !!! !!!
-	cufftHandle planr2c;
-	cufftHandle planc2r;
-
-	COMPLEX *dev_F_1;
-	COMPLEX *dev_F_2;
-
-	REAL *dev_bitmap_ref_R;
-	REAL *dev_bitmap_ref_G;
-	REAL *dev_bitmap_ref_B;
-	REAL *dev_mu_bitmap_ref_R;
-	REAL *dev_mu_bitmap_ref_G;
-	REAL *dev_mu_bitmap_ref_B;
-	REAL *dev_mu_bitmap_out_bitmap_ref_R;
-	REAL *dev_mu_bitmap_out_bitmap_ref_G;
-	REAL *dev_mu_bitmap_out_bitmap_ref_B;
-	REAL *dev_mu_bitmap_ref_R_square;
-	REAL *dev_mu_bitmap_ref_G_square;
-	REAL *dev_mu_bitmap_ref_B_square;
-
-	REAL *dev_mu_bitmap_out_R;
-	REAL *dev_mu_bitmap_out_G;
-	REAL *dev_mu_bitmap_out_B;
-	REAL *dev_mu_bitmap_out_R_square;
-	REAL *dev_mu_bitmap_out_G_square;
-	REAL *dev_mu_bitmap_out_B_square;
-	// !!! !!! !!!
 };
 
 // *************************************************************************************************
@@ -847,9 +766,29 @@ struct SOptiXRenderConfig {
 	float bg_color_G;
 	float bg_color_B;
 
-	float lr_RGB;
-	float lr_RGB_exponential_decay_coefficient;
-	float lr_RGB_final;
+	float lr_SH0;
+	float lr_SH0_exponential_decay_coefficient;
+	float lr_SH0_final;
+
+	int   SH1_activation_iter;
+	float lr_SH1;
+	float lr_SH1_exponential_decay_coefficient;
+	float lr_SH1_final;
+
+	int   SH2_activation_iter;
+	float lr_SH2;
+	float lr_SH2_exponential_decay_coefficient;
+	float lr_SH2_final;
+
+	int   SH3_activation_iter;
+	float lr_SH3;
+	float lr_SH3_exponential_decay_coefficient;
+	float lr_SH3_final;
+
+	int   SH4_activation_iter;
+	float lr_SH4;
+	float lr_SH4_exponential_decay_coefficient;
+	float lr_SH4_final;
 
 	float lr_alpha;
 	float lr_alpha_exponential_decay_coefficient;
@@ -880,12 +819,37 @@ struct SOptiXRenderConfig {
 	float split_ratio;
 	float lambda;
 	float ray_termination_T_threshold;
+	float ray_termination_T_threshold_inference;
 	float last_significant_Gauss_alpha_gradient_precision;
 	float chi_square_squared_radius;
 	int max_Gaussians_per_ray;
+	
 	int saving_frequency;
-	int evaluation_frequency;
-	int evaluation_epoch;
+	int saving_iter;
+
+	int saving_frequency_PLY;
+	int saving_iter_PLY;
+	
+	bool evaluation_on_startup_train;
+	int evaluation_frequency_train;
+	int evaluation_iter_train;
+	bool evaluation_on_finish_train;
+
+	bool evaluation_on_startup_test;
+	int evaluation_frequency_test;
+	int evaluation_iter_test;
+	bool evaluation_on_finish_test;
+
+	bool visualization_on_startup_train;
+	int visualization_frequency_train;
+	int visualization_iter_train;
+	bool visualization_on_finish_train;
+
+	bool visualization_on_startup_test;
+	int visualization_frequency_test;
+	int visualization_iter_test;
+	bool visualization_on_finish_test;
+
 	int max_Gaussians_per_model;
 };
 
@@ -899,32 +863,27 @@ extern bool GetSceneExtentOptiX(float &scene_extent_host);
 extern bool InitializeOptiXRendererSH0(
 	SRenderParams<0> &params,
 	SOptiXRenderParams<0> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 );
 extern bool InitializeOptiXRendererSH1(
 	SRenderParams<1> &params,
 	SOptiXRenderParams<1> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 );
 extern bool InitializeOptiXRendererSH2(
 	SRenderParams<2> &params,
 	SOptiXRenderParams<2> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 );
 extern bool InitializeOptiXRendererSH3(
 	SRenderParams<3> &params,
 	SOptiXRenderParams<3> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 );
 extern bool InitializeOptiXRendererSH4(
 	SRenderParams<4> &params,
 	SOptiXRenderParams<4> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 );
 
 // *************************************************************************************************
@@ -932,32 +891,27 @@ extern bool InitializeOptiXRendererSH4(
 extern bool InitializeOptiXOptimizerSH0(
 	SRenderParams<0> &params,
 	SOptiXRenderParams<0> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 );
 extern bool InitializeOptiXOptimizerSH1(
 	SRenderParams<1> &params,
 	SOptiXRenderParams<1> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 );
 extern bool InitializeOptiXOptimizerSH2(
 	SRenderParams<2> &params,
 	SOptiXRenderParams<2> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 );
 extern bool InitializeOptiXOptimizerSH3(
 	SRenderParams<3> &params,
 	SOptiXRenderParams<3> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 );
 extern bool InitializeOptiXOptimizerSH4(
 	SRenderParams<4> &params,
 	SOptiXRenderParams<4> &params_OptiX,
-	bool loadFromFile = false,
-	int epoch = 0
+	char *dirPath = NULL
 );
 
 // *************************************************************************************************
@@ -978,24 +932,24 @@ extern bool RenderOptiXSH4(SOptiXRenderParams<4>& params_OptiX, bool inference =
 
 // *************************************************************************************************
 
-extern bool UpdateGradientOptiXSH0(SOptiXRenderParams<0>& params_OptiX, int &state);
-extern bool UpdateGradientOptiXSH1(SOptiXRenderParams<1>& params_OptiX, int &state);
-extern bool UpdateGradientOptiXSH2(SOptiXRenderParams<2>& params_OptiX, int &state);
-extern bool UpdateGradientOptiXSH3(SOptiXRenderParams<3>& params_OptiX, int &state);
-extern bool UpdateGradientOptiXSH4(SOptiXRenderParams<4>& params_OptiX, int &state);
+extern bool UpdateGradientOptiXSH0(SOptiXRenderParams<0>& params_OptiX);
+extern bool UpdateGradientOptiXSH1(SOptiXRenderParams<1>& params_OptiX);
+extern bool UpdateGradientOptiXSH2(SOptiXRenderParams<2>& params_OptiX);
+extern bool UpdateGradientOptiXSH3(SOptiXRenderParams<3>& params_OptiX);
+extern bool UpdateGradientOptiXSH4(SOptiXRenderParams<4>& params_OptiX);
 
 // *************************************************************************************************
 
-extern bool DumpParametersOptiXSH0(SOptiXRenderParams<0> &params_OptiX);
-extern bool DumpParametersOptiXSH1(SOptiXRenderParams<1> &params_OptiX);
-extern bool DumpParametersOptiXSH2(SOptiXRenderParams<2> &params_OptiX);
-extern bool DumpParametersOptiXSH3(SOptiXRenderParams<3> &params_OptiX);
-extern bool DumpParametersOptiXSH4(SOptiXRenderParams<4> &params_OptiX);
+extern bool DumpParametersOptiXSH0(SOptiXRenderParams<0> &params_OptiX, char *dirPath);
+extern bool DumpParametersOptiXSH1(SOptiXRenderParams<1> &params_OptiX, char *dirPath);
+extern bool DumpParametersOptiXSH2(SOptiXRenderParams<2> &params_OptiX, char *dirPath);
+extern bool DumpParametersOptiXSH3(SOptiXRenderParams<3> &params_OptiX, char *dirPath);
+extern bool DumpParametersOptiXSH4(SOptiXRenderParams<4> &params_OptiX, char *dirPath);
 
 // *************************************************************************************************
 
-extern bool DumpParametersToPLYFileOptiXSH0(SOptiXRenderParams<0> &params_OptiX);
-extern bool DumpParametersToPLYFileOptiXSH1(SOptiXRenderParams<1> &params_OptiX);
-extern bool DumpParametersToPLYFileOptiXSH2(SOptiXRenderParams<2> &params_OptiX);
-extern bool DumpParametersToPLYFileOptiXSH3(SOptiXRenderParams<3> &params_OptiX);
-extern bool DumpParametersToPLYFileOptiXSH4(SOptiXRenderParams<4> &params_OptiX);
+extern bool DumpParametersToPLYFileOptiXSH0(SOptiXRenderParams<0> &params_OptiX, char *dirPath);
+extern bool DumpParametersToPLYFileOptiXSH1(SOptiXRenderParams<1> &params_OptiX, char *dirPath);
+extern bool DumpParametersToPLYFileOptiXSH2(SOptiXRenderParams<2> &params_OptiX, char *dirPath);
+extern bool DumpParametersToPLYFileOptiXSH3(SOptiXRenderParams<3> &params_OptiX, char *dirPath);
+extern bool DumpParametersToPLYFileOptiXSH4(SOptiXRenderParams<4> &params_OptiX, char *dirPath);

@@ -2,13 +2,13 @@
 
 // *************************************************************************************************
 
-void LoadFromFile(const char *fPath, int epochNum, const char *fExtension, void *buf, int size) {
+void LoadFromFile(const char *dirPath, int epochNum, const char *fName, void *buf, int size) {
 	FILE *f;
 
-	char fName[256];
-	sprintf_s(fName, "%s/%d.%s", fPath, epochNum, fExtension);
+	char fPath[256];
+	sprintf_s(fPath, "%s\\%s_iter_%d.checkpoint", dirPath, fName, epochNum);
 
-	fopen_s(&f, fName, "rb");
+	fopen_s(&f, fPath, "rb");
 	fread(buf, size, 1, f);
 	fclose(f);
 }
