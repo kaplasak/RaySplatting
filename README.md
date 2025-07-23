@@ -110,8 +110,8 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
   ```plaintext
   "C:\Users\<Windows username>\source\repos\RaySplats\RaySplats"
   ```
-- In lines: 2 and 3 of the configuration file specify the location of the dataset main directory and the output 3DGS *.ply file obtained after short model pretraining (**Important!** The spherical harmonics degree used for pretraining and the target one specified in the line 7 of the config file don't have to match);
-- In lines: 8-10 of the configuration file specify the background color that matches the background color used for pretraining using the following formula:
+- In lines: 4 and 5 of the configuration file specify the location of the dataset main directory and the output 3DGS *.ply file obtained after short model pretraining (**Important!** The spherical harmonics degree used for pretraining and the target one specified in the line 7 of the config file don't have to match);
+- In lines: 13-15 of the configuration file specify the background color that matches the background color used for pretraining using the following formula:
   
   R' = (R + 0.5) / 256<br>
   G' = (G + 0.5) / 256<br>
