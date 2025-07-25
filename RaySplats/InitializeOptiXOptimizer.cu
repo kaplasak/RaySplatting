@@ -15,86 +15,86 @@ bool InitializeOptiXOptimizer(
 
 	// *** *** *** *** ***
 
-	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_1, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_1, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_2, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_2, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_3, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_3, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	// !!! !!! !!!
-	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_4, sizeof(REAL2_G) * params_OptiX.maxNumberOfGaussians1);
+	error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_4, sizeof(REAL2_G) * params_OptiX.tmpArraysGroup2Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	// Spherical harmonics
 	if constexpr (SH_degree >= 1) {
-		error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_1, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+		error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_1, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_2, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+		error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_2, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
 		if constexpr (SH_degree >= 2) {
-			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_3, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_3, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_4, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_4, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_5, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_5, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_6, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_6, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
 			if constexpr (SH_degree >= 3) {
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_7, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_7, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_8, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_8, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_9, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_9, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_10, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_10, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_11, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_11, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
 				if constexpr (SH_degree >= 4) {
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_12, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_12, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_13, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_13, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_14, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_14, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_15, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_15, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_16, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_16, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_17, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_17, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_18, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1);
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_18, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				} else {
 					// !!! !!! !!!
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_12, sizeof(REAL_G) * params_OptiX.maxNumberOfGaussians1);
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_12, sizeof(REAL_G) * params_OptiX.tmpArraysGroup2Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 			}
 		} else {
 			// !!! !!! !!!
-			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_3, sizeof(REAL_G) * params_OptiX.maxNumberOfGaussians1);
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_3, sizeof(REAL_G) * params_OptiX.tmpArraysGroup2Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 	}
@@ -120,172 +120,172 @@ bool InitializeOptiXOptimizer(
 
 	// *** *** *** *** ***
 
-	error_CUDA = cudaMalloc(&params_OptiX.m11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+	error_CUDA = cudaMalloc(&params_OptiX.m11, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.m21, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+	error_CUDA = cudaMalloc(&params_OptiX.m21, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.m31, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+	error_CUDA = cudaMalloc(&params_OptiX.m31, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	// !!! !!! !!!
-	error_CUDA = cudaMalloc(&params_OptiX.m41, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
+	error_CUDA = cudaMalloc(&params_OptiX.m41, sizeof(float2) * params_OptiX.tmpArraysGroup1Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	// Spherical harmonics
 	if constexpr (SH_degree >= 1) {
-		error_CUDA = cudaMalloc(&params_OptiX.m_SH_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMalloc(&params_OptiX.m_SH_1, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMalloc(&params_OptiX.m_SH_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMalloc(&params_OptiX.m_SH_2, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
 		if constexpr (SH_degree >= 2) {
-			error_CUDA = cudaMalloc(&params_OptiX.m_SH_3, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.m_SH_3, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.m_SH_4, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.m_SH_4, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.m_SH_5, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.m_SH_5, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.m_SH_6, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.m_SH_6, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
 			if constexpr (SH_degree >= 3) {
-				error_CUDA = cudaMalloc(&params_OptiX.m_SH_7, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.m_SH_7, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.m_SH_8, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.m_SH_8, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.m_SH_9, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.m_SH_9, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.m_SH_10, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.m_SH_10, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.m_SH_11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.m_SH_11, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
 				if constexpr (SH_degree >= 4) {
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_12, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_12, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_13, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_13, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_14, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_14, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_15, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_15, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_16, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_16, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_17, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_17, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_18, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_18, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				} else {
 					// !!! !!! !!!
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_12, sizeof(float) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_12, sizeof(float) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 			}
 		} else {
 			// !!! !!! !!!
-			error_CUDA = cudaMalloc(&params_OptiX.m_SH_3, sizeof(float) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.m_SH_3, sizeof(float) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 	}
 
 	// *** *** *** *** ***
 
-	error_CUDA = cudaMalloc(&params_OptiX.v11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+	error_CUDA = cudaMalloc(&params_OptiX.v11, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.v21, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+	error_CUDA = cudaMalloc(&params_OptiX.v21, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	error_CUDA = cudaMalloc(&params_OptiX.v31, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+	error_CUDA = cudaMalloc(&params_OptiX.v31, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	// !!! !!! !!!
-	error_CUDA = cudaMalloc(&params_OptiX.v41, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
+	error_CUDA = cudaMalloc(&params_OptiX.v41, sizeof(float2) * params_OptiX.tmpArraysGroup1Size);
 	if (error_CUDA != cudaSuccess) goto Error;
 
 	// Spherical harmonics
 	if constexpr (SH_degree >= 1) {
-		error_CUDA = cudaMalloc(&params_OptiX.v_SH_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMalloc(&params_OptiX.v_SH_1, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMalloc(&params_OptiX.v_SH_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMalloc(&params_OptiX.v_SH_2, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
 		if constexpr (SH_degree >= 2) {
-			error_CUDA = cudaMalloc(&params_OptiX.v_SH_3, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.v_SH_3, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.v_SH_4, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.v_SH_4, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.v_SH_5, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.v_SH_5, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.v_SH_6, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.v_SH_6, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
 			if constexpr (SH_degree >= 3) {
-				error_CUDA = cudaMalloc(&params_OptiX.v_SH_7, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.v_SH_7, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.v_SH_8, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.v_SH_8, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.v_SH_9, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.v_SH_9, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.v_SH_10, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.v_SH_10, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.v_SH_11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.v_SH_11, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 
 				if constexpr (SH_degree >= 4) {
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_12, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_12, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_13, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_13, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_14, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_14, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_15, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_15, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_16, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_16, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_17, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_17, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_18, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_18, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				} else {
 					// !!! !!! !!!
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_12, sizeof(float) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_12, sizeof(float) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 			}
 		} else {
 			// !!! !!! !!!
-			error_CUDA = cudaMalloc(&params_OptiX.v_SH_3, sizeof(float) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.v_SH_3, sizeof(float) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 	}
@@ -306,17 +306,17 @@ bool InitializeOptiXOptimizer(
 	// ************************************************************************************************
 
 	if (dirPath == NULL) {
-		error_CUDA = cudaMemset(params_OptiX.m11, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMemset(params_OptiX.m11, 0, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.m21, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMemset(params_OptiX.m21, 0, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.m31, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMemset(params_OptiX.m31, 0, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
 		// !!! !!! !!!
-		error_CUDA = cudaMemset(params_OptiX.m41, 0, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMemset(params_OptiX.m41, 0, sizeof(float2) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
 		// Spherical harmonics
@@ -392,17 +392,17 @@ bool InitializeOptiXOptimizer(
 
 		// *** *** *** *** ***
 
-		error_CUDA = cudaMemset(params_OptiX.v11, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMemset(params_OptiX.v11, 0, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.v21, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMemset(params_OptiX.v21, 0, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		error_CUDA = cudaMemset(params_OptiX.v31, 0, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMemset(params_OptiX.v31, 0, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
 		// !!! !!! !!!
-		error_CUDA = cudaMemset(params_OptiX.v41, 0, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
+		error_CUDA = cudaMemset(params_OptiX.v41, 0, sizeof(float2) * params_OptiX.tmpArraysGroup1Size);
 		if (error_CUDA != cudaSuccess) goto Error;
 
 		// Spherical harmonics

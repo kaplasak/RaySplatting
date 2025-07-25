@@ -88,5 +88,7 @@ bool SetConfigurationOptiX(SOptiXRenderConfig& config_OptiX) {
 	cudaMemcpyToSymbol(max_Gaussians_per_model, &config_OptiX.max_Gaussians_per_model, sizeof(int));
 	max_Gaussians_per_model_host = config_OptiX.max_Gaussians_per_model;
 
+	tmp_arrays_growth_factor_host = config_OptiX.tmp_arrays_growth_factor;
+
 	return true;
 }

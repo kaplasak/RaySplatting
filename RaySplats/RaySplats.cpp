@@ -90,9 +90,9 @@ int YCnt = 0;
 // *** *** *** *** ***
 
 int bitmapSize;
-void *BMPFileHeader;
-int bitmapWidth = 400;
-int bitmapHeight = 400;
+void *BMPFileHeader = NULL;
+int bitmapWidth;
+int bitmapHeight;
 int scanLineSize;
 
 wchar_t *text = NULL;
@@ -151,7 +151,16 @@ double FPS_inference = INFINITY;
 
 // *************************************************************************************************
 
-void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &numberOfPoses, SCamera *&poses, int *&bitmap, char **&img_names) {
+void LoadSceneAndCamera(
+	const char *dataPath,
+	const char *jsonFileName,
+	int &numberOfPoses,
+	SCamera *&poses,
+	void *&BMPFileHeader,
+	int *&bitmap,
+	int &bitmapWidth, int &bitmapHeight,
+	char **&img_names
+) {
 	FILE *f;
 
 	// *** *** *** *** ***
@@ -206,7 +215,8 @@ void LoadSceneAndCamera(const char *dataPath, const char *jsonFileName, int &num
 				bitmapSize = ftell(f_bitmap);
 				fseek(f_bitmap, 0, SEEK_SET);
 
-				BMPFileHeader = malloc(54);
+				if (BMPFileHeader == NULL)
+					BMPFileHeader = malloc(54);
 
 				fread(BMPFileHeader, 54, 1, f_bitmap);
 
@@ -823,6 +833,23 @@ void LoadConfigFile(const char* fName, SOptiXRenderConfig &config) {
 
 	// *********************************************************************************************
 
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// MEMORY MANAGEMENT
+	fgets(buf, 256, f);
+	fgets(buf, 256, f);
+	fgets(buf, 256, f);
+
+	// *********************************************************************************************
+
+	// Temporary arrays growth factor
+	fgets(buf, 256, f);
+	sscanf_s(buf, "%lf", &config.tmp_arrays_growth_factor, 256);
+
+	// *********************************************************************************************
+
 	fclose(f);
 }
 
@@ -835,11 +862,12 @@ void LoadSceneAndCameraCOLMAP(
 	int &numberOfPoses_test,
 	SCamera *&poses_train,
 	SCamera *&poses_test,
+	void *&BMPFileHeader,
 	int *&bitmap_train,
 	int *&bitmap_test,
+	int &bitmapWidth, int &bitmapHeight,
 	char **&img_names,
 	char **&img_names_test,
-	int &bitmapWidth, int &bitmapHeight,
 	float &double_tan_half_fov_x, float &double_tan_half_fov_y
 ) {
 	FILE *f;
@@ -905,7 +933,8 @@ void LoadSceneAndCameraCOLMAP(
 			bitmapSize = ftell(f_bitmap);
 			fseek(f_bitmap, 0, SEEK_SET);
 
-			BMPFileHeader = malloc(54);
+			if (BMPFileHeader == NULL)
+				BMPFileHeader = malloc(54);
 
 			fread(BMPFileHeader, 54, 1, f_bitmap);
 
@@ -1057,12 +1086,6 @@ void LoadPLYFile(const char* fName, SGaussianComponent<SH_degree> **GC_ptr) {
 		GC[i].sY = pfs[numberOfProperties - 6];
 		GC[i].sZ = pfs[numberOfProperties - 5];
 
-		// !!! !!! !!!
-		//GC[i].sX = expf(-GC[i].sX);
-		//GC[i].sY = expf(-GC[i].sY);
-		//GC[i].sZ = expf(-GC[i].sZ);
-		// !!! !!! !!!
-
 		// *** *** *** *** ***
 
 		double qr = pfs[numberOfProperties - 4];
@@ -1087,16 +1110,6 @@ void LoadPLYFile(const char* fName, SGaussianComponent<SH_degree> **GC_ptr) {
 		GC[i].B = pfs[8];
 
 		if constexpr (SH_degree > 0) {
-			/*int ind = 0;
-			for (int j = 1; j <= SH_degree; ++j) {
-				for (int k = 0; k < ((2 * j) + 1) * 3; ++k) {
-					if (j <= SH_degree_source) GC[i].RGB_SH_higher_order[ind] = pfs[9 + ind];
-					else
-						GC[i].RGB_SH_higher_order[ind] = 0.0f; // !!! !!! !!!
-
-					++ind;
-				}
-			}*/
 			int ind_src = 0;
 			for (int j = 0; j < 3; ++j) {
 				if (SH_degree <= SH_degree_source) {
@@ -1127,9 +1140,6 @@ void LoadPLYFile(const char* fName, SGaussianComponent<SH_degree> **GC_ptr) {
 		}
 		
 		GC[i].alpha = pfs[numberOfProperties - 8];
-		// !!! !!! !!!
-		//GC[i].alpha = 1.0f / (1.0f + expf(-GC[i].alpha));
-		// !!! !!! !!!
 	}
 
 	fclose(f);
@@ -1149,16 +1159,35 @@ void PrepareScene() {
 			NUMBER_OF_POSES_TEST,
 			poses,
 			poses_test,
+			BMPFileHeader,
 			bitmap_ref,
 			bitmap_ref_test,
+			bitmapWidth, bitmapHeight,
 			img_names,
 			img_names_test,
-			bitmapWidth, bitmapHeight,
 			double_tan_half_fov_x, double_tan_half_fov_y
 		); // !!! !!! !!!
 	else {
-		LoadSceneAndCamera(config.data_path, "transforms_train.json", NUMBER_OF_POSES, poses, bitmap_ref, img_names); // !!! !!! !!!
-		LoadSceneAndCamera(config.data_path, "transforms_test.json", NUMBER_OF_POSES_TEST, poses_test, bitmap_ref_test, img_names_test); // !!! !!! !!!
+		LoadSceneAndCamera(
+			config.data_path,
+			"transforms_train.json",
+			NUMBER_OF_POSES,
+			poses,
+			BMPFileHeader,
+			bitmap_ref,
+			bitmapWidth, bitmapHeight,
+			img_names
+		);
+		LoadSceneAndCamera(
+			config.data_path,
+			"transforms_test.json",
+			NUMBER_OF_POSES_TEST,
+			poses_test,
+			BMPFileHeader,
+			bitmap_ref_test,
+			bitmapWidth, bitmapHeight,
+			img_names_test
+		);
 	}
 
 	// *** *** ***
@@ -2289,7 +2318,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 						++epochNum;
 
 						// !!! !!! !!!
-						if (params_OptiX->epoch > config.end_epoch)
+						if (epochNum > config.end_epoch)
 							PostQuitMessage(0);
 						// !!! !!! !!!
 

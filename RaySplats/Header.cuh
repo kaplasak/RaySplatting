@@ -26,11 +26,6 @@
 #define MAX_RAY_LENGTH 1 
 //#define USE_DOUBLE_PRECISION 
 
-const double REALLOC_MULTIPLIER1 = 1.5;
-const double REALLOC_MULTIPLIER2 = 1.51;
-
-#define SH_BAND_INCREASE_PERIOD 4096
-
 //#define DEBUG_GRADIENT
 #define SSIM_REDUCE_MEMORY_OVERHEAD
 //#define RENDERER_OPTIX_USE_DOUBLE_PRECISION
@@ -164,6 +159,7 @@ extern float last_significant_Gauss_alpha_gradient_precision_host;
 extern float chi_square_squared_radius_host; 
 extern int max_Gaussians_per_ray_host;
 extern int max_Gaussians_per_model_host;
+extern double tmp_arrays_growth_factor_host;
 
 extern __constant__ float bg_color_R;
 extern __constant__ float bg_color_G;
@@ -335,8 +331,8 @@ struct SOptiXRenderParams {
 
 	int numberOfGaussians;
 	int scatterBufferSize; // !!! !!! !!!
-	int maxNumberOfGaussians1; // !!! !!! !!!
-	int maxNumberOfGaussians;
+	int tmpArraysGroup1Size;
+	int tmpArraysGroup2Size; // !!! !!! !!!
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -448,8 +444,8 @@ struct SOptiXRenderParams<1> {
 
 	int numberOfGaussians;
 	int scatterBufferSize; // !!! !!! !!!
-	int maxNumberOfGaussians1; // !!! !!! !!!
-	int maxNumberOfGaussians;
+	int tmpArraysGroup1Size;
+	int tmpArraysGroup2Size; // !!! !!! !!!
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -569,8 +565,8 @@ struct SOptiXRenderParams<2> {
 
 	int numberOfGaussians;
 	int scatterBufferSize; // !!! !!! !!!
-	int maxNumberOfGaussians1; // !!! !!! !!!
-	int maxNumberOfGaussians;
+	int tmpArraysGroup1Size;
+	int tmpArraysGroup2Size; // !!! !!! !!!
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -696,8 +692,8 @@ struct SOptiXRenderParams<3> {
 
 	int numberOfGaussians;
 	int scatterBufferSize; // !!! !!! !!!
-	int maxNumberOfGaussians1; // !!! !!! !!!
-	int maxNumberOfGaussians;
+	int tmpArraysGroup1Size;
+	int tmpArraysGroup2Size; // !!! !!! !!!
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -835,8 +831,8 @@ struct SOptiXRenderParams<4> {
 
 	int numberOfGaussians;
 	int scatterBufferSize; // !!! !!! !!!
-	int maxNumberOfGaussians1; // !!! !!! !!!
-	int maxNumberOfGaussians;
+	int tmpArraysGroup1Size;
+	int tmpArraysGroup2Size; // !!! !!! !!!
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -1073,6 +1069,8 @@ struct SOptiXRenderConfig {
 	bool visualization_on_finish_test;
 
 	int max_Gaussians_per_model;
+
+	double tmp_arrays_growth_factor;
 };
 
 // *************************************************************************************************

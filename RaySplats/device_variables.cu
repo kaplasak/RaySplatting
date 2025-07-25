@@ -30,6 +30,7 @@ float last_significant_Gauss_alpha_gradient_precision_host;
 float chi_square_squared_radius_host; 
 int max_Gaussians_per_ray_host;
 int max_Gaussians_per_model_host;
+double tmp_arrays_growth_factor_host;
 
 __constant__ float bg_color_R;
 __constant__ float bg_color_G;

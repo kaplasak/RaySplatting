@@ -1698,7 +1698,7 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams<SH_degree> params_Opt
 		// alpha
 		GC_1.w -= ((lr * (m1.w * tmp1)) / (sqrtf(v1.w * tmp2) + epsilon));
 		isOpaqueEnough = (GC_1.w >= alpha_threshold_for_Gauss_removal);
-		if ((GC_1.w < alpha_threshold_for_Gauss_removal) && ((params_OptiX.epoch > densification_end_epoch) || (params_OptiX.numberOfGaussians > max_Gaussians_per_model)))
+		if ((GC_1.w < alpha_threshold_for_Gauss_removal) && (params_OptiX.epoch > densification_end_epoch))
 			GC_1.w = alpha_threshold_for_Gauss_removal;
 
 		// *****************************************************************************************
@@ -1880,9 +1880,9 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams<SH_degree> params_Opt
 	bool densification_epoch = (
 		(params_OptiX.epoch >= densification_start_epoch) &&
 		(params_OptiX.epoch <= densification_end_epoch) &&
-		((params_OptiX.epoch % densification_frequency) == 0) &&
-		(params_OptiX.numberOfGaussians <= max_Gaussians_per_model) // !!!! !!! !!! 
+		((params_OptiX.epoch % densification_frequency) == 0)
 	);
+	bool clone_or_split;
 
 	unsigned GaussInd;
 	unsigned sampleNum;
@@ -1894,14 +1894,15 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams<SH_degree> params_Opt
 		}
 		__syncthreads();
 
+		clone_or_split = (isMovedEnough && (params_OptiX.numberOfGaussians <= max_Gaussians_per_model));
 		if (tid < params_OptiX.numberOfGaussians) {
-			if ((isOpaqueEnough) && (isBigEnough) && (isNotTooBig)) {
-				if (isMovedEnough) {
+			if (isOpaqueEnough && isBigEnough && isNotTooBig) {
+				if (clone_or_split) {
 					GaussInd = atomicAdd(&counter1, 1);
 					if (isBigEnoughToSplit) sampleNum = atomicAdd(&counter2, 6);
 				}
 			} else
-				needsToBeRemoved[tid] = 0; // !!! !!! !!! EXPERIMENTAL !!! !!! !!!*/
+				needsToBeRemoved[tid] = 0;
 		}
 		__syncthreads();
 
@@ -1995,8 +1996,8 @@ __global__ void dev_UpdateGradientOptiX(SOptiXRenderParams<SH_degree> params_Opt
 			((float2 *)params_OptiX.m41)[tid] = m4;
 			((float2 *)params_OptiX.v41)[tid] = v4;
 		} else {
-			if ((isOpaqueEnough) && (isBigEnough) && (isNotTooBig)) {
-				if (isMovedEnough) {
+			if (isOpaqueEnough && isBigEnough && isNotTooBig) {
+				if (clone_or_split) {
 					if (isBigEnoughToSplit) {
 						float Z1, Z2;
 						RandomNormalFloat(sampleNum, Z1, Z2); // !!! !!! !!!
@@ -3157,7 +3158,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 		// !!! !!! !!!
 
 		params_OptiX.width + (kernel_size - 1), params_OptiX.height + (kernel_size - 1), kernel_size
-		);
+	);
 #endif
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
@@ -3241,21 +3242,26 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
 
-	// !!! !!! !!!
-	int numberOfGaussiansOld = params_OptiX.numberOfGaussians; // !!! !!! !!!
-	// !!! !!! !!!
+	// *** *** *** *** ***
 
-	if (
+	bool densification = (
 		(params_OptiX.epoch >= densification_start_epoch_host) &&
 		(params_OptiX.epoch <= densification_end_epoch_host) &&
-		((params_OptiX.epoch % densification_frequency_host) == 0) &&
-		(numberOfGaussiansOld <= max_Gaussians_per_model_host) // !!! !!! !!!
-	) {
+		((params_OptiX.epoch % densification_frequency_host) == 0)
+	);
+	bool next_densification = (
+		densification &&
+		(params_OptiX.epoch + densification_frequency_host <= densification_end_epoch_host)
+	);
+
+	// *** *** *** *** ***
+
+	if (densification) {
 		error_CUDA = cudaMemset(params_OptiX.counter1, 0, sizeof(unsigned) * 1);
 		if (error_CUDA != cudaSuccess) goto Error;
 
 		// !!! !!! !!! EXPERIMENTAL !!! !!! !!!
-		cuMemsetD32(((CUdeviceptr)needsToBeRemoved_host), 1, params_OptiX.numberOfGaussians * REALLOC_MULTIPLIER1);
+		cuMemsetD32(((CUdeviceptr)needsToBeRemoved_host), 1, params_OptiX.tmpArraysGroup1Size);
 		// !!! !!! !!! EXPERIMENTAL !!! !!! !!!
 	}
 
@@ -3267,12 +3273,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 
 	// *** *** *** *** ***
 
-	if (
-		(params_OptiX.epoch >= densification_start_epoch_host) &&
-		(params_OptiX.epoch <= densification_end_epoch_host) &&
-		((params_OptiX.epoch % densification_frequency_host) == 0) &&
-		(numberOfGaussiansOld <= max_Gaussians_per_model_host) // !!! !!! !!!
-	) {
+	if (densification) {
 		// !!! !!! !!! EXPERIMENTAL !!! !!! !!!
 		int numberOfNewGaussians;
 
@@ -3283,7 +3284,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 
 		// !!! !!! !!!
 		if (params_OptiX.numberOfGaussians > params_OptiX.scatterBufferSize) {
-			params_OptiX.scatterBufferSize = params_OptiX.numberOfGaussians * 1.125f; // !!! !!! !!!
+			params_OptiX.scatterBufferSize = params_OptiX.numberOfGaussians; // !!! !!! !!!
 
 			error_CUDA = cudaFree(Gaussians_indices_after_removal_host);
 			if (error_CUDA != cudaSuccess) goto Error;
@@ -3313,12 +3314,9 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 		// ************************************************************************************************
 
 		// !!! !!! !!!
-		if (numberOfGaussiansNew > params_OptiX.maxNumberOfGaussians1) {
-			if (numberOfGaussiansNew <= max_Gaussians_per_model_host)
-				params_OptiX.maxNumberOfGaussians1 = numberOfGaussiansNew * 1.125f; // !!! !!! !!!
-			else
-				params_OptiX.maxNumberOfGaussians1 = numberOfGaussiansNew; // !!! !!! !!!
-
+		if (numberOfGaussiansNew > params_OptiX.tmpArraysGroup2Size) {
+			params_OptiX.tmpArraysGroup2Size = numberOfGaussiansNew; // !!! !!! !!!
+			
 			// *** *** *** *** ***
 
 			error_CUDA = cudaFree(params_OptiX.dL_dparams_1);
@@ -3398,106 +3396,93 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 
 			// *** *** *** *** ***
 
-			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_1, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_1, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_2, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_2, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_3, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_3, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 			if (error_CUDA != cudaSuccess) goto Error;
 
 			// !!! !!! !!!
-			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_4, sizeof(REAL2_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+			error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_4, sizeof(REAL2_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 			if (error_CUDA != cudaSuccess) goto Error;
 
 			// Spherical harmonics
 			if constexpr (SH_degree >= 1) {
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_1, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_1, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_2, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+				error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_2, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 				if (error_CUDA != cudaSuccess) goto Error;
 
 				if constexpr (SH_degree >= 2) {
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_3, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_3, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_4, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_4, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_5, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_5, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_6, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_6, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 					if (error_CUDA != cudaSuccess) goto Error;
 
 					if constexpr (SH_degree >= 3) {
-						error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_7, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+						error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_7, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_8, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+						error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_8, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_9, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+						error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_9, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_10, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+						error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_10, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_11, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+						error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_11, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 						if (error_CUDA != cudaSuccess) goto Error;
 
 						if constexpr (SH_degree >= 4) {
-							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_12, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_12, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_13, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_13, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_14, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_14, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_15, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_15, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_16, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_16, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_17, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_17, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_18, sizeof(REAL4_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_18, sizeof(REAL4_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 							if (error_CUDA != cudaSuccess) goto Error;
 						} else {
 							// !!! !!! !!!
-							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_12, sizeof(REAL_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+							error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_12, sizeof(REAL_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 					}
 				} else {
 					// !!! !!! !!!
-					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_3, sizeof(REAL_G) * params_OptiX.maxNumberOfGaussians1); // !!! !!! !!!
+					error_CUDA = cudaMalloc(&params_OptiX.dL_dparams_SH_3, sizeof(REAL_G) * params_OptiX.tmpArraysGroup2Size); // !!! !!! !!!
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 			}
-		}
-		// !!! !!! !!!
 
-		bool needsToReallocMemory = false;
-		if (
-			((numberOfGaussiansNew * REALLOC_MULTIPLIER1) > params_OptiX.maxNumberOfGaussians) && 
-			(numberOfGaussiansNew <= max_Gaussians_per_model_host)
-		) {
-			needsToReallocMemory = true;
-			params_OptiX.maxNumberOfGaussians = numberOfGaussiansNew * REALLOC_MULTIPLIER2; // !!! !!! !!!
-		}
+			// *** *** *** *** ***
 
-		// *** *** *** *** ***
-
-		// !!! !!! !!!
-		// inverse transform matrix
-		if (needsToReallocMemory) {
+			// Inverse transform matrix
 			error_CUDA = cudaFree(params_OptiX.Sigma1_inv);
 			if (error_CUDA != cudaSuccess) goto Error;
 
@@ -3507,35 +3492,44 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.Sigma3_inv);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.Sigma1_inv, sizeof(float4) * ((params_OptiX.maxNumberOfGaussians + 31) & -32)); // !!! !!! !!!
+			error_CUDA = cudaMalloc(&params_OptiX.Sigma1_inv, sizeof(float4) * ((params_OptiX.tmpArraysGroup2Size + 31) & -32)); // !!! !!! !!!
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.Sigma2_inv, sizeof(float4) * ((params_OptiX.maxNumberOfGaussians + 31) & -32)); // !!! !!! !!!
+			error_CUDA = cudaMalloc(&params_OptiX.Sigma2_inv, sizeof(float4) * ((params_OptiX.tmpArraysGroup2Size + 31) & -32)); // !!! !!! !!!
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.Sigma3_inv, sizeof(float4) * ((params_OptiX.maxNumberOfGaussians + 31) & -32)); // !!! !!! !!!
+			error_CUDA = cudaMalloc(&params_OptiX.Sigma3_inv, sizeof(float4) * ((params_OptiX.tmpArraysGroup2Size + 31) & -32)); // !!! !!! !!!
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			// *** *** *** *** ***
+
+			// AABB
+			error_CUDA = cudaFree(params_OptiX.aabbBuffer);
+			if (error_CUDA != cudaSuccess) goto Error;
+
+			error_CUDA = cudaMalloc(&params_OptiX.aabbBuffer, sizeof(OptixAabb) * ((params_OptiX.tmpArraysGroup2Size + 31) & -32)); // !!! !!! !!!
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		// !!! !!! !!!
 
 		// *** *** *** *** ***
 
-		// AABB
-		/*thrust::scatter_if(
-			thrust::device_pointer_cast((AABB *)params_OptiX.aabbBuffer),
-			thrust::device_pointer_cast((AABB *)params_OptiX.aabbBuffer) + params_OptiX.numberOfGaussians,
-			thrust::device_pointer_cast(Gaussians_indices_after_removal_host),
-			thrust::device_pointer_cast(needsToBeRemoved_host),
-			thrust::device_pointer_cast((AABB *)scatterBuffer)
-		);*/
-		if (needsToReallocMemory) {
-			error_CUDA = cudaFree(params_OptiX.aabbBuffer);
-			if (error_CUDA != cudaSuccess) goto Error;
-
-			error_CUDA = cudaMalloc(&params_OptiX.aabbBuffer, sizeof(OptixAabb) * ((params_OptiX.maxNumberOfGaussians + 31) & -32)); // !!! !!! !!!
-			if (error_CUDA != cudaSuccess) goto Error;
+		// !!! !!! !!!
+		bool needsToReallocMemory = false;
+		if (
+			next_densification &&
+			(numberOfGaussiansNew * tmp_arrays_growth_factor_host > params_OptiX.tmpArraysGroup1Size) && 
+			(numberOfGaussiansNew <= max_Gaussians_per_model_host)
+		) {
+			needsToReallocMemory = true;
+			params_OptiX.tmpArraysGroup1Size = numberOfGaussiansNew * tmp_arrays_growth_factor_host;
+		} else {
+			if (!next_densification) {
+				needsToReallocMemory = true;
+				params_OptiX.tmpArraysGroup1Size = numberOfGaussiansNew;
+			}
 		}
-		//cudaMemcpy(params_OptiX.aabbBuffer, scatterBuffer, sizeof(float) * 6 * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
+		// !!! !!! !!!
 
 		// *** *** *** *** ***
 
@@ -3551,7 +3545,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.GC_part_1_1);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.GC_part_1_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.GC_part_1_1, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.GC_part_1_1, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3567,7 +3561,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.GC_part_2_1);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.GC_part_2_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.GC_part_2_1, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.GC_part_2_1, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3583,7 +3577,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.GC_part_3_1);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.GC_part_3_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.GC_part_3_1, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.GC_part_3_1, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3600,7 +3594,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			if (error_CUDA != cudaSuccess) goto Error;
 
 			// !!! !!! !!!
-			error_CUDA = cudaMalloc(&params_OptiX.GC_part_4_1, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.GC_part_4_1, sizeof(float2) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		// !!! !!! !!!
@@ -3620,7 +3614,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 				error_CUDA = cudaFree(params_OptiX.GC_SH_1);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.GC_SH_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.GC_SH_1, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 			}
 			cudaMemcpy(params_OptiX.GC_SH_1, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3637,7 +3631,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 				error_CUDA = cudaFree(params_OptiX.GC_SH_2);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.GC_SH_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.GC_SH_2, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 			}
 			cudaMemcpy(params_OptiX.GC_SH_2, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3655,7 +3649,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.GC_SH_3);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.GC_SH_3, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.GC_SH_3, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.GC_SH_3, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3672,7 +3666,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.GC_SH_4);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.GC_SH_4, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.GC_SH_4, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.GC_SH_4, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3689,7 +3683,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.GC_SH_5);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.GC_SH_5, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.GC_SH_5, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.GC_SH_5, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3706,7 +3700,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.GC_SH_6);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.GC_SH_6, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.GC_SH_6, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.GC_SH_6, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3724,7 +3718,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.GC_SH_7);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.GC_SH_7, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.GC_SH_7, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.GC_SH_7, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3741,7 +3735,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.GC_SH_8);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.GC_SH_8, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.GC_SH_8, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.GC_SH_8, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3758,7 +3752,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.GC_SH_9);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.GC_SH_9, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.GC_SH_9, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.GC_SH_9, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3775,7 +3769,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.GC_SH_10);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.GC_SH_10, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.GC_SH_10, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.GC_SH_10, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3792,7 +3786,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.GC_SH_11);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.GC_SH_11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.GC_SH_11, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.GC_SH_11, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3810,7 +3804,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.GC_SH_12);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_12, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_12, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.GC_SH_12, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3827,7 +3821,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.GC_SH_13);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_13, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_13, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.GC_SH_13, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3844,7 +3838,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.GC_SH_14);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_14, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_14, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.GC_SH_14, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3861,7 +3855,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.GC_SH_15);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_15, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_15, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.GC_SH_15, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3878,7 +3872,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.GC_SH_16);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_16, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_16, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.GC_SH_16, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3895,7 +3889,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.GC_SH_17);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_17, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_17, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.GC_SH_17, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3912,7 +3906,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.GC_SH_18);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_18, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_18, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.GC_SH_18, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3930,7 +3924,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.GC_SH_12);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_12, sizeof(float) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.GC_SH_12, sizeof(float) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.GC_SH_12, scatterBuffer, sizeof(float) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3950,7 +3944,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.GC_SH_3);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.GC_SH_3, sizeof(float) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.GC_SH_3, sizeof(float) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.GC_SH_3, scatterBuffer, sizeof(float) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3971,7 +3965,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.m11);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.m11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.m11, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.m11, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -3987,7 +3981,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.m21);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.m21, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.m21, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.m21, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4003,7 +3997,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.m31);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.m31, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.m31, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.m31, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4019,7 +4013,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.m41);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.m41, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.m41, sizeof(float2) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.m41, scatterBuffer, sizeof(float2) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4038,7 +4032,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 				error_CUDA = cudaFree(params_OptiX.m_SH_1);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.m_SH_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.m_SH_1, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 			}
 			cudaMemcpy(params_OptiX.m_SH_1, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4055,7 +4049,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 				error_CUDA = cudaFree(params_OptiX.m_SH_2);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.m_SH_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.m_SH_2, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 			}
 			cudaMemcpy(params_OptiX.m_SH_2, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4073,7 +4067,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.m_SH_3);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_3, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_3, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.m_SH_3, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4090,7 +4084,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.m_SH_4);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_4, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_4, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.m_SH_4, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4107,7 +4101,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.m_SH_5);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_5, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_5, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.m_SH_5, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4124,7 +4118,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.m_SH_6);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_6, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_6, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.m_SH_6, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4142,7 +4136,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.m_SH_7);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.m_SH_7, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.m_SH_7, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.m_SH_7, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4159,7 +4153,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.m_SH_8);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.m_SH_8, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.m_SH_8, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.m_SH_8, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4176,7 +4170,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.m_SH_9);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.m_SH_9, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.m_SH_9, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.m_SH_9, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4193,7 +4187,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.m_SH_10);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.m_SH_10, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.m_SH_10, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.m_SH_10, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4210,7 +4204,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.m_SH_11);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.m_SH_11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.m_SH_11, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.m_SH_11, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4228,7 +4222,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.m_SH_12);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.m_SH_12, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.m_SH_12, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.m_SH_12, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4245,7 +4239,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.m_SH_13);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.m_SH_13, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.m_SH_13, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.m_SH_13, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4262,7 +4256,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.m_SH_14);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.m_SH_14, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.m_SH_14, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.m_SH_14, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4279,7 +4273,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.m_SH_15);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.m_SH_15, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.m_SH_15, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.m_SH_15, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4296,7 +4290,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.m_SH_16);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.m_SH_16, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.m_SH_16, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.m_SH_16, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4313,7 +4307,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.m_SH_17);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.m_SH_17, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.m_SH_17, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.m_SH_17, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4330,7 +4324,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.m_SH_18);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.m_SH_18, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.m_SH_18, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.m_SH_18, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4348,7 +4342,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.m_SH_12);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.m_SH_12, sizeof(float) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.m_SH_12, sizeof(float) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.m_SH_12, scatterBuffer, sizeof(float) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4368,7 +4362,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.m_SH_3);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.m_SH_3, sizeof(float) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.m_SH_3, sizeof(float) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.m_SH_3, scatterBuffer, sizeof(float) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4389,7 +4383,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.v11);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.v11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.v11, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.v11, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4405,7 +4399,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.v21);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.v21, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.v21, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.v21, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4421,7 +4415,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.v31);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.v31, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.v31, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.v31, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4437,7 +4431,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 			error_CUDA = cudaFree(params_OptiX.v41);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&params_OptiX.v41, sizeof(float2) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&params_OptiX.v41, sizeof(float2) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 		}
 		cudaMemcpy(params_OptiX.v41, scatterBuffer, sizeof(float2) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4456,7 +4450,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 				error_CUDA = cudaFree(params_OptiX.v_SH_1);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.v_SH_1, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.v_SH_1, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 			}
 			cudaMemcpy(params_OptiX.v_SH_1, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4473,7 +4467,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 				error_CUDA = cudaFree(params_OptiX.v_SH_2);
 				if (error_CUDA != cudaSuccess) goto Error;
 
-				error_CUDA = cudaMalloc(&params_OptiX.v_SH_2, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+				error_CUDA = cudaMalloc(&params_OptiX.v_SH_2, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 				if (error_CUDA != cudaSuccess) goto Error;
 			}
 			cudaMemcpy(params_OptiX.v_SH_2, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4491,7 +4485,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.v_SH_3);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_3, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_3, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.v_SH_3, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4508,7 +4502,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.v_SH_4);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_4, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_4, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.v_SH_4, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4525,7 +4519,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.v_SH_5);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_5, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_5, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.v_SH_5, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4542,7 +4536,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.v_SH_6);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_6, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_6, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.v_SH_6, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4560,7 +4554,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.v_SH_7);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.v_SH_7, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.v_SH_7, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.v_SH_7, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4577,7 +4571,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.v_SH_8);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.v_SH_8, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.v_SH_8, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.v_SH_8, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4594,7 +4588,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.v_SH_9);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.v_SH_9, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.v_SH_9, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.v_SH_9, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4611,7 +4605,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.v_SH_10);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.v_SH_10, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.v_SH_10, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.v_SH_10, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4628,7 +4622,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 						error_CUDA = cudaFree(params_OptiX.v_SH_11);
 						if (error_CUDA != cudaSuccess) goto Error;
 
-						error_CUDA = cudaMalloc(&params_OptiX.v_SH_11, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+						error_CUDA = cudaMalloc(&params_OptiX.v_SH_11, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 						if (error_CUDA != cudaSuccess) goto Error;
 					}
 					cudaMemcpy(params_OptiX.v_SH_11, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4646,7 +4640,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.v_SH_12);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.v_SH_12, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.v_SH_12, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.v_SH_12, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4663,7 +4657,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.v_SH_13);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.v_SH_13, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.v_SH_13, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.v_SH_13, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4680,7 +4674,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.v_SH_14);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.v_SH_14, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.v_SH_14, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.v_SH_14, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4697,7 +4691,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.v_SH_15);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.v_SH_15, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.v_SH_15, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.v_SH_15, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4714,7 +4708,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.v_SH_16);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.v_SH_16, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.v_SH_16, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.v_SH_16, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4731,7 +4725,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.v_SH_17);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.v_SH_17, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.v_SH_17, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.v_SH_17, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4748,7 +4742,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.v_SH_18);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.v_SH_18, sizeof(float4) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.v_SH_18, sizeof(float4) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.v_SH_18, scatterBuffer, sizeof(float4) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4766,7 +4760,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 							error_CUDA = cudaFree(params_OptiX.v_SH_12);
 							if (error_CUDA != cudaSuccess) goto Error;
 
-							error_CUDA = cudaMalloc(&params_OptiX.v_SH_12, sizeof(float) * params_OptiX.maxNumberOfGaussians);
+							error_CUDA = cudaMalloc(&params_OptiX.v_SH_12, sizeof(float) * params_OptiX.tmpArraysGroup1Size);
 							if (error_CUDA != cudaSuccess) goto Error;
 						}
 						cudaMemcpy(params_OptiX.v_SH_12, scatterBuffer, sizeof(float) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4786,7 +4780,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 					error_CUDA = cudaFree(params_OptiX.v_SH_3);
 					if (error_CUDA != cudaSuccess) goto Error;
 
-					error_CUDA = cudaMalloc(&params_OptiX.v_SH_3, sizeof(float) * params_OptiX.maxNumberOfGaussians);
+					error_CUDA = cudaMalloc(&params_OptiX.v_SH_3, sizeof(float) * params_OptiX.tmpArraysGroup1Size);
 					if (error_CUDA != cudaSuccess) goto Error;
 				}
 				cudaMemcpy(params_OptiX.v_SH_3, scatterBuffer, sizeof(float) * numberOfGaussiansNew, cudaMemcpyDeviceToDevice);
@@ -4795,16 +4789,31 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 
 		// *** *** *** *** ***
 
+		// !!! !!! !!!
 		if (needsToReallocMemory) {
 			error_CUDA = cudaFree(needsToBeRemoved_host);
 			if (error_CUDA != cudaSuccess) goto Error;
 
-			error_CUDA = cudaMalloc(&needsToBeRemoved_host, sizeof(int) * params_OptiX.maxNumberOfGaussians);
+			error_CUDA = cudaMalloc(&needsToBeRemoved_host, sizeof(int) * params_OptiX.tmpArraysGroup1Size);
 			if (error_CUDA != cudaSuccess) goto Error;
 
 			error_CUDA = cudaMemcpyToSymbol(needsToBeRemoved, &needsToBeRemoved_host, sizeof(int *));
 			if (error_CUDA != cudaSuccess) goto Error;
+		} else {
+			if (!next_densification) {
+				error_CUDA = cudaFree(Gaussians_indices_after_removal_host);
+				if (error_CUDA != cudaSuccess) goto Error;
+
+				error_CUDA = cudaFree(scatterBuffer);
+				if (error_CUDA != cudaSuccess) goto Error;
+
+				error_CUDA = cudaFree(needsToBeRemoved_host);
+				if (error_CUDA != cudaSuccess) goto Error;
+			}
 		}
+		// !!! !!! !!!
+
+		// *** *** *** *** ***
 
 		params_OptiX.numberOfGaussians = numberOfGaussiansNew;
 		// !!! !!! !!! EXPERIMENTAL !!! !!! !!!
@@ -4818,7 +4827,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 		params_OptiX.GC_part_2_1, params_OptiX.GC_part_3_1, params_OptiX.GC_part_4_1,
 		params_OptiX.numberOfGaussians,
 		params_OptiX.Sigma1_inv, params_OptiX.Sigma2_inv, params_OptiX.Sigma3_inv
-		); 
+	); 
 
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
@@ -4833,7 +4842,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 		params_OptiX.GC_part_1_1, params_OptiX.GC_part_2_1, params_OptiX.GC_part_3_1, params_OptiX.GC_part_4_1,
 		params_OptiX.numberOfGaussians,
 		(float *)params_OptiX.aabbBuffer
-		);
+	);
 	error_CUDA = cudaGetLastError();
 	if (error_CUDA != cudaSuccess) goto Error;
 
@@ -4913,7 +4922,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 		error_CUDA = cudaFree(params_OptiX.tempBuffer);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		params_OptiX.tempBufferSize = blasBufferSizes.tempSizeInBytes * 2; // !!! !!! !!!
+		params_OptiX.tempBufferSize = blasBufferSizes.tempSizeInBytes; // !!! !!! !!!
 		error_CUDA = cudaMalloc(&params_OptiX.tempBuffer, params_OptiX.tempBufferSize);
 		if (error_CUDA != cudaSuccess) goto Error;
 	}
@@ -4922,7 +4931,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 		error_CUDA = cudaFree(params_OptiX.outputBuffer);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		params_OptiX.outputBufferSize = blasBufferSizes.outputSizeInBytes * 2; // !!! !!! !!!
+		params_OptiX.outputBufferSize = blasBufferSizes.outputSizeInBytes; // !!! !!! !!!
 		error_CUDA = cudaMalloc(&params_OptiX.outputBuffer, params_OptiX.outputBufferSize);
 		if (error_CUDA != cudaSuccess) goto Error;
 	}
@@ -4957,7 +4966,7 @@ bool UpdateGradientOptiX(SOptiXRenderParams<SH_degree> &params_OptiX) {
 		error_CUDA = cudaFree(params_OptiX.asBuffer);
 		if (error_CUDA != cudaSuccess) goto Error;
 
-		params_OptiX.asBufferSize = compactedSize * 2; // !!! !!! !!! 
+		params_OptiX.asBufferSize = compactedSize; // !!! !!! !!! 
 		error_CUDA = cudaMalloc(&params_OptiX.asBuffer, params_OptiX.asBufferSize);
 		if (error_CUDA != cudaSuccess) goto Error;
 	}

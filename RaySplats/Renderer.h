@@ -93,8 +93,8 @@ struct SOptiXRenderParams {
 
 	int numberOfGaussians;
 	int scatterBufferSize; // !!! !!! !!!
-	int maxNumberOfGaussians1; // !!! !!! !!!
-	int maxNumberOfGaussians;
+	int tmpArraysGroup1Size;
+	int tmpArraysGroup2Size; // !!! !!! !!!
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -210,8 +210,8 @@ struct SOptiXRenderParams<1> {
 
 	int numberOfGaussians;
 	int scatterBufferSize; // !!! !!! !!!
-	int maxNumberOfGaussians1; // !!! !!! !!!
-	int maxNumberOfGaussians;
+	int tmpArraysGroup1Size;
+	int tmpArraysGroup2Size; // !!! !!! !!!
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -335,8 +335,8 @@ struct SOptiXRenderParams<2> {
 
 	int numberOfGaussians;
 	int scatterBufferSize; // !!! !!! !!!
-	int maxNumberOfGaussians1; // !!! !!! !!!
-	int maxNumberOfGaussians;
+	int tmpArraysGroup1Size;
+	int tmpArraysGroup2Size; // !!! !!! !!!
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -466,8 +466,8 @@ struct SOptiXRenderParams<3> {
 
 	int numberOfGaussians;
 	int scatterBufferSize; // !!! !!! !!!
-	int maxNumberOfGaussians1; // !!! !!! !!!
-	int maxNumberOfGaussians;
+	int tmpArraysGroup1Size;
+	int tmpArraysGroup2Size; // !!! !!! !!!
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -609,8 +609,8 @@ struct SOptiXRenderParams<4> {
 
 	int numberOfGaussians;
 	int scatterBufferSize; // !!! !!! !!!
-	int maxNumberOfGaussians1; // !!! !!! !!!
-	int maxNumberOfGaussians;
+	int tmpArraysGroup1Size;
+	int tmpArraysGroup2Size; // !!! !!! !!!
 
 	void *aabbBuffer;
 	void *compactedSizeBuffer;
@@ -851,6 +851,8 @@ struct SOptiXRenderConfig {
 	bool visualization_on_finish_test;
 
 	int max_Gaussians_per_model;
+
+	double tmp_arrays_growth_factor;
 };
 
 // *************************************************************************************************
