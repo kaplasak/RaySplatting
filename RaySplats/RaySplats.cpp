@@ -1151,6 +1151,8 @@ void PrepareScene() {
 	LoadConfigFile("config.txt", config); // !!! !!! !!!
 	ray_termination_T_threshold_training = config.ray_termination_T_threshold;
 
+	// *** *** *** *** ***
+
 	if (strcmp(config.data_format, "colmap") == 0)
 		LoadSceneAndCameraCOLMAP(
 			config.data_path,
@@ -1193,6 +1195,10 @@ void PrepareScene() {
 	// *** *** ***
 	
 	if (config.start_epoch == 0) {
+		CreateDirectory(L"output", NULL);
+
+		// *** *** *** *** ***
+
 		HANDLE hFindFile;
 		WIN32_FIND_DATAA findFileData;
 
@@ -1218,9 +1224,6 @@ void PrepareScene() {
 		// *** *** *** *** ***
 
 		wchar_t bufw[256];
-
-		swprintf(bufw, 256, L"output", next_available_dir_id);
-		CreateDirectory(bufw, NULL);
 
 		swprintf(bufw, 256, L"output\\%d", next_available_dir_id);
 		CreateDirectory(bufw, NULL);
@@ -1303,6 +1306,15 @@ void PrepareScene() {
 		fclose(f);
 		// !!! !!! !!!
 	}
+
+	// *** *** *** *** ***
+
+	wchar_t bufw[256];
+
+	// !!! !!! !!!
+	swprintf(bufw, 256, L"output\\%d\\config.txt", next_available_dir_id);
+	CopyFile(L"config.txt", bufw, true);
+	// !!! !!! !!!
 
 	// *** *** *** *** ***
 
