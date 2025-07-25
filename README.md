@@ -104,7 +104,6 @@ Krzysztof Byrski, Marcin Mazur, Jacek Tabor, Tadeusz Dziarmaga, Marcin Kądzioł
 # Training your first model (Blender dataset):
 
 - Train the model with 3DGS for some small number of iterations (for example 100) on some Blender dataset (for example: "lego" from "NeRF synthetic" set);
-- Copy the output file cameras.json to the dataset main directory;
 - Convert all of the files in the subdirectories: "train" and "test" located in the dataset main directory to 24-bit *.bmp file format without changing their names;
 - Copy the configuration file "config.txt" to the project's main directory. On our test system we copied it to the following directory:
   ```plaintext
