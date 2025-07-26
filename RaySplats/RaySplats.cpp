@@ -69,7 +69,7 @@ double training_time = 0.0f;
 int mouseX;
 int mouseY;
 bool cursorShown = true;
-bool customPose = true;
+bool customPose = false;
 bool cameraChanged;
 
 bool A_down = false;
