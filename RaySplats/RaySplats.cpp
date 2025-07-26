@@ -1227,6 +1227,11 @@ void PrepareScene() {
 
 		swprintf(bufw, 256, L"output\\%d", next_available_dir_id);
 		CreateDirectory(bufw, NULL);
+		
+		// !!! !!! !!!
+		swprintf(bufw, 256, L"output\\%d\\config.txt", next_available_dir_id);
+		CopyFile(L"config.txt", bufw, true);
+		// !!! !!! !!!
 
 		swprintf(bufw, 256, L"output\\%d\\checkpoints", next_available_dir_id);
 		CreateDirectory(bufw, NULL);
@@ -1306,15 +1311,6 @@ void PrepareScene() {
 		fclose(f);
 		// !!! !!! !!!
 	}
-
-	// *** *** *** *** ***
-
-	wchar_t bufw[256];
-
-	// !!! !!! !!!
-	swprintf(bufw, 256, L"output\\%d\\config.txt", next_available_dir_id);
-	CopyFile(L"config.txt", bufw, true);
-	// !!! !!! !!!
 
 	// *** *** *** *** ***
 
