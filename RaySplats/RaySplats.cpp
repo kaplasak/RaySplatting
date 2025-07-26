@@ -12,7 +12,7 @@
 #include <CommCtrl.h>
 
 #include "Renderer.h"
-#include "RaySplattingSH.h"
+#include "RaySplats.h"
 
 // *** *** *** *** ***
 
